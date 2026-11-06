@@ -44,6 +44,7 @@ export const sfx = {
   unheart: () => tone({ f: 600, f2: 380, d: 0.1, g: 0.12 }),
   coin: () => { tone({ f: 988, d: 0.075, type: 'square', g: 0.05 }); tone({ f: 1319, t: 0.07, d: 0.38, type: 'square', g: 0.05 }); },
   tick: () => tone({ f: 1900, d: 0.025, type: 'square', g: 0.025 }),
+  msg: () => { tone({ f: 1175, d: 0.09, g: 0.15 }); tone({ f: 1568, t: 0.1, d: 0.24, g: 0.13 }); },
   thud: () => tone({ f: 150, f2: 60, d: 0.16, g: 0.32 }),
   whoosh: () => noise({ d: 0.35, f: 600, f2: 4200, g: 0.1 }),
   fanfare: () => {

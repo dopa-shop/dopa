@@ -4,6 +4,7 @@ import { CATS, PRODUCTS, byId, catById, offPct, tile, reviewsFor, ratingBars, se
 import * as S from './store.js';
 import { sfx, haptic, confetti, flyTo, countUp, bump, fxSettings, unlockAudio } from './fx.js';
 import { ic } from './icons.js';
+import { SITUATIONS, sitById } from './situations.js';
 
 const { state } = S;
 const $ = (s, r = document) => r.querySelector(s);
@@ -83,6 +84,7 @@ app.innerHTML = `
   </nav>
   <div id="sheet" class="sheet" hidden role="dialog" aria-modal="true" aria-label="商品の詳細"></div>
   <div id="modal" class="modal" hidden role="dialog" aria-modal="true"></div>
+  <button class="mission-pill" id="mPill" data-sit-open hidden aria-label="挑戦中のお題を見る"></button>
   <div id="toasts" aria-live="polite"></div>`;
 
 let cur = null;
@@ -176,6 +178,7 @@ function renderHome() {
   </header>
   <div class="wrap">
     <button class="search-fake" data-tab="explore" data-focus="1">${ic('search', 20)}<span>りんご、スニーカー、口紅…</span></button>
+    <div id="homeSit">${sitCardTpl()}</div>
     <section class="hero" id="hero" style="${tileVars(hp.variants[0].c)}">
       <div class="hero-stage" id="heroStage"><img class="stage-img" data-k="${hp.id}:0" alt=""></div>
       <div class="hero-info" id="heroInfo">${heroInfo(hp)}</div>
@@ -207,7 +210,7 @@ function renderHome() {
   hydrate(el);
   heroIO.observe($('#hero'));
 }
-function refreshHome() { const s = $('#homeShip'); if (s) s.innerHTML = shipBanner(); syncHearts(); }
+function refreshHome() { const s = $('#homeShip'); if (s) s.innerHTML = shipBanner(); refreshSitCard(); syncHearts(); }
 const heroIO = new IntersectionObserver(([e]) => {
   heroVisible = e.isIntersecting;
   if (viewer.host?.id === 'heroStage') heroVisible && !document.hidden ? viewer.start() : viewer.stop();
@@ -360,6 +363,7 @@ function renderCart() {
   el.innerHTML = `
   <header class="hd"><h1 class="title">カート</h1><span class="muted">${S.cartCount()}点</span></header>
   <div class="wrap">
+    ${sitBannerTpl()}
     ${shipBanner()}
     <ul class="lines">${q.lines.map((l, i) => `
       <li class="line">
@@ -389,7 +393,7 @@ function renderCart() {
       <div class="earn-row">${ic('coin', 16)}<span>獲得予定</span><b>+${fmt(q.earn)}pt</b>${q.rank.mult > 1 ? `<small>${q.rank.name}特典 ×${q.rank.mult}</small>` : ''}${q.coupon?.kind === 'mult' ? `<small>クーポン ×${q.coupon.val}</small>` : ''}</div>
     </section>
     <div class="slide" id="slide" role="button" tabindex="0" aria-label="注文を確定する">
-      <div class="slide-fill"></div><span class="slide-lb">スライドして注文する</span><span class="slide-knob">${ic('right', 24)}</span>
+      <div class="slide-fill"></div><span class="slide-lb">${state.mission ? 'スライドして爆買いする' : 'スライドして注文する'}</span><span class="slide-knob">${ic('right', 24)}</span>
     </div>
     <p class="fine">架空の注文です。お金は一切かかりません。</p>
   </div>`;
@@ -422,17 +426,25 @@ function checkout() {
   confetti({ n: 140, power: 1.15 });
   setTimeout(() => confetti({ x: 0, y: innerHeight * 0.75, n: 70, spread: 1.0, power: 1.2 }), 220);
   setTimeout(() => confetti({ x: innerWidth, y: innerHeight * 0.75, n: 70, spread: 1.0, power: 1.2 }), 360);
-  const { order, before, after } = res;
-  openModal(`
-    <div class="celebrate">
-      <div class="rays"></div>
+  const { order, before, after, mission } = res;
+  const sit = mission && sitById[mission.id];
+  const head = sit ? `
+      <p class="eyebrow">${esc(sit.title)}</p>
+      <h2>${esc(sit.done)}</h2>
+      <div class="chat mini">${chatHead(sit)}<div class="msg-row"><div class="bubble typing" id="celReply"><i></i><i></i><i></i></div></div></div>
+      ${haulTpl(order.lines, 12)}
+      <div class="haul-stat"><b>${fmt(mission.count)}点</b>を爆買い<span>${yen(mission.total)}ぶん</span><em>お支払い 0円</em></div>` : `
       <div class="cel-check"><svg viewBox="0 0 52 52" aria-hidden="true"><circle cx="26" cy="26" r="24"/><path d="M15 27l7 7 15-16"/></svg></div>
       <h2>ご注文ありがとうございます！</h2>
       <p class="muted">注文番号 #${order.no}</p>
-      <div class="cel-items">${order.lines.slice(0, 5).map((l, i) => `<span class="mini-tile pop" style="${tileVars(byId[l.id].variants[l.v].c)};--i:${i}"><img data-k="${l.id}:${l.v}" alt=""></span>`).join('')}${order.lines.length > 5 ? `<span class="more">+${order.lines.length - 5}</span>` : ''}</div>
+      <div class="cel-items">${order.lines.slice(0, 5).map((l, i) => `<span class="mini-tile pop" style="${tileVars(byId[l.id].variants[l.v].c)};--i:${i}"><img data-k="${l.id}:${l.v}" alt=""></span>`).join('')}${order.lines.length > 5 ? `<span class="more">+${order.lines.length - 5}</span>` : ''}</div>`;
+  openModal(`
+    <div class="celebrate${sit ? ' sit' : ''}">
+      <div class="rays"></div>
+      ${head}
       <div class="cel-earn">${ic('coin', 24)}<b>+<span id="celPts">0</span></b><small>pt 獲得</small></div>
       <div class="cel-xp"><div class="cel-xp-hd"><span>${before.name}会員</span><span>${after.next ? `${after.next.name}まで あと${yen(after.toNext)}` : '最高ランク'}</span></div><div class="bar"><i id="celXp" style="width:${before.progress * 100}%"></i></div></div>
-      <div class="cel-chips"><span>${ic('ticket', 16)}ガチャチケット +1</span><span>${ic('truck', 16)}約${S.DELIVERY_SEC}秒でお届け</span></div>
+      <div class="cel-chips"><span>${ic('ticket', 16)}ガチャチケット +${sit ? 2 : 1}</span><span>${ic('truck', 16)}約${S.DELIVERY_SEC}秒でお届け</span>${sit ? `<span>${ic('star', 16)}手帳にスタンプ ${S.doneSituations().size}/${SITUATIONS.length}</span>` : ''}</div>
       <div class="cel-btns"><button class="btn-ghost" data-close>買い物を続ける</button><button class="btn-primary" data-track>配送を見る</button></div>
     </div>`, {
     onClose: () => {
@@ -440,6 +452,10 @@ function checkout() {
     },
   });
   hydrate($('#modal'));
+  if (sit) {
+    setTimeout(() => confetti({ y: innerHeight * 0.3, n: 120, power: 1.1 }), 600);
+    setTimeout(() => { const b = $('#celReply'); if (!b) return; b.classList.remove('typing'); b.textContent = sit.reply; bump(b, 'pop'); sfx.msg(); haptic(); }, 1200);
+  }
   setTimeout(() => { countUp($('#celPts'), 0, order.earn, 1100); sfx.coin(); }, 420);
   setTimeout(() => { const bar = $('#celXp'); if (bar) bar.style.width = (after.i > before.i ? 100 : after.progress * 100) + '%'; }, 700);
   if (cur === 'cart') renderCart();
@@ -498,6 +514,7 @@ function renderMe() {
       <div><b>${yen(state.spent)}</b><small>累計のお買い物</small></div>
     </div>
     <section class="sec"><div class="sec-hd"><h2>注文と配送</h2></div><div id="orders" class="orders">${ordersTpl()}</div></section>
+    <section class="sec"><div class="sec-hd"><h2>シチュエーション手帳</h2><span class="muted">${S.doneSituations().size} / ${SITUATIONS.length}種</span></div>${sitBookTpl()}</section>
     <section class="sec"><div class="sec-hd"><h2>バッジ</h2><span class="muted">${state.badges.length} / ${S.BADGES.length}</span></div>
       <div class="badges">${S.BADGES.map((b) => { const on = state.badges.includes(b.id); return `<div class="bdg${on ? ' on' : ''}"><span class="bdg-ic">${ic(b.icon, 24)}</span><b>${b.name}</b><small>${b.desc}</small></div>`; }).join('')}</div>
     </section>
@@ -528,7 +545,7 @@ function liveOrders() {
     if (st.done && !o.notified) {
       o.notified = true; S.emit('orders');
       sfx.add(); haptic('success');
-      toast({ img: urlCache.get(ckey('@box')), title: 'お届けしました！', text: `#${o.no} · ${o.lines.reduce((a, l) => a + l.qty, 0)}点`, action: '開封する', onAction: () => unbox(o.no), ms: 6000 });
+      toast({ img: urlCache.get(ckey('@box')), title: o.mission ? `「${sitById[o.mission]?.title}」の荷物が届いた！` : 'お届けしました！', text: `#${o.no} · ${o.lines.reduce((a, l) => a + l.qty, 0)}点`, action: '開封する', onAction: () => unbox(o.no), ms: 6000 });
     }
   }
   if (cur === 'me') {
@@ -555,6 +572,7 @@ async function unbox(no) {
   openModal(`
     <div class="unbox" id="unbox">
       <div class="rays"></div>
+      ${o.mission && sitById[o.mission] ? `<p class="ub-cap">${esc(sitById[o.mission].title)} の荷物</p>` : ''}
       <button class="ub-box" id="ubBox" aria-label="タップして開封"><img src="${boxUrl}" alt=""></button>
       <p class="ub-hint" id="ubHint">タップして開封 <b>${taps}</b></p>
       <div class="ub-items" id="ubItems"></div>
@@ -721,9 +739,203 @@ function shipCrossed(before) {
   const after = S.quote();
   if (before.toFree > 0 && after.toFree <= 0) {
     setTimeout(() => { toast({ icon: 'truck', title: '送料無料になりました！', text: `カート合計 ${yen(after.subtotal)}`, tone: 'good' }); sfx.coin(); confetti({ y: 80, n: 50, power: 0.7 }); }, 650);
+  } else if (state.mission) {
+    // the pill counts up instead; milestones bring their own celebrations
   } else if (after.toFree > 0) {
     toast({ img: null, icon: 'bag', title: 'カートに追加しました', text: `あと${yen(after.toFree)}で送料無料`, ms: 1800 });
   } else toast({ icon: 'bag', title: 'カートに追加しました', text: `${S.cartCount()}点 · ${yen(after.subtotal)}`, ms: 1800 });
+}
+
+/* ================= シチュエーション爆買い =================
+   A random scenario arrives as a chat message; the player shops for it however they like.
+   Nothing is scored: the rewards are the spree itself, milestones, and a keepsake stamp. */
+const AVA = ['#ff7aa2', '#5aa9ff', '#ffb21e', '#2fcf9a', '#9b7bff', '#ff8a3d'];
+const avaColor = (s) => AVA[[...s.from].reduce((a, ch) => a + ch.charCodeAt(0), 0) % AVA.length];
+const avatar = (s, cls = '') => `<span class="ava ${cls}" style="--a:${avaColor(s)}" aria-hidden="true">${esc([...s.from][0])}</span>`;
+const chatHead = (s) => `<div class="chat-hd">${avatar(s)}<span><b>${esc(s.from)}</b><small>${esc(s.rel)}</small></span></div>`;
+const sitTile = (s) => tileVars(byId[s.icon].variants[0].c);
+function haulTpl(lines, max = 12) {
+  const shown = lines.slice(0, max), rest = lines.length - shown.length;
+  return `<div class="haul">${shown.map((l, i) => `<span class="mini-tile pop" style="${tileVars(byId[l.id].variants[l.v].c)};--i:${i}"><img data-k="${l.id}:${l.v}" alt="">${l.qty > 1 ? `<b>×${l.qty}</b>` : ''}</span>`).join('')}${rest > 0 ? `<span class="more">+${rest}</span>` : ''}</div>`;
+}
+function sitCardTpl() {
+  const m = state.mission && sitById[state.mission.id];
+  if (m) {
+    const n = S.cartCount();
+    return `<button class="sit-card on" data-sit-open style="${sitTile(m)}">
+      <span class="sit-card-tx"><small>${ic('flash', 13)}お題に挑戦中</small><b>${esc(m.title)}</b><em>${avatar(m, 'xs')}<span>${esc(m.msgs[0])}</span></em></span>
+      <span class="sit-pic"><img data-k="${m.icon}:0" alt=""></span>
+      <span class="sit-go">${n ? `カート ${n}点` : 'お題を見る'}${ic('right', 16)}</span>
+    </button>`;
+  }
+  const pics = seeded(SITUATIONS, Math.floor(Date.now() / 864e5)).slice(0, 3);
+  return `<button class="sit-card" data-sit-start>
+    <span class="sit-card-tx"><small>シチュエーション爆買い</small><b>お題にそって<br>好きなだけ爆買い</b><em>予算は無制限 · ${S.doneSituations().size}/${SITUATIONS.length}種あそんだ</em></span>
+    <span class="sit-pics">${pics.map((s, i) => `<span class="sp sp${i}" style="${sitTile(s)}"><img data-k="${s.icon}:0" alt=""></span>`).join('')}</span>
+    <span class="sit-go hot">${ic('flash', 16)}スタート</span>
+  </button>`;
+}
+function refreshSitCard() { const el = $('#homeSit'); if (el) { el.innerHTML = sitCardTpl(); hydrate(el); } }
+function sitBannerTpl() {
+  const m = state.mission && sitById[state.mission.id]; if (!m) return '';
+  return `<button class="sit-banner" data-sit-open style="${sitTile(m)}">${avatar(m)}<span><small>お題：${esc(m.title)}</small><b>準備ができたら、スライドで爆買い！</b></span>${ic('right', 18)}</button>`;
+}
+
+/* --- the pill that rides above the tab bar while a scenario is active --- */
+let pillN = 0, pillY = 0;
+function renderPill() {
+  const m = state.mission && sitById[state.mission.id], pill = $('#mPill');
+  document.documentElement.classList.toggle('has-mission', !!m);
+  if (!m) { pill.hidden = true; pill.innerHTML = ''; return; }
+  pillN = S.cartCount(); pillY = S.quote().subtotal;
+  pill.innerHTML = `<span class="mp-ic" style="${sitTile(m)}"><img data-k="${m.icon}:0" alt=""></span>
+    <span class="mp-tx"><small>お題に挑戦中</small><b>${esc(m.title)}</b></span>
+    <span class="mp-ct"><b><span id="mpN">${pillN}</span>点</b><small id="mpY">${yen(pillY)}</small></span>`;
+  pill.hidden = false; hydrate(pill);
+}
+function updatePill() {
+  if (!state.mission) return;
+  if (!$('#mpN')) { renderPill(); return; }
+  const n = S.cartCount(), y = S.quote().subtotal;
+  if (n !== pillN) { countUp($('#mpN'), pillN, n, 500); if (n > pillN) bump($('#mPill'), 'pulse-sm'); }
+  if (y !== pillY) countUp($('#mpY'), pillY, y, 700, (v) => yen(v));
+  pillN = n; pillY = y;
+}
+const N_MSG = { 5: 'いい調子！', 10: '止まらない！', 20: '爆買いモード突入', 30: 'もはや伝説', 50: 'カートがあふれそう', 100: '全部買う勢い' };
+function milestoneFx() {
+  const m = state.mission && sitById[state.mission.id]; if (!m) return;
+  S.missionMilestones().forEach((h, i) => setTimeout(() => {
+    const big = h.kind === 'n' ? h.v >= 20 : h.v >= 300000;
+    toast({ icon: h.kind === 'n' ? 'bag' : 'coin', title: h.kind === 'n' ? `${h.v}点突破！${N_MSG[h.v] || ''}` : `${yen(h.v)}ぶん突破！`, text: `お題：${m.title}`, tone: 'badge', ms: 2400 });
+    const r = $('#mPill')?.getBoundingClientRect();
+    confetti({ x: r && r.width ? r.left + r.width / 2 : innerWidth / 2, y: r && r.width ? r.top : innerHeight - 150, n: big ? 120 : 55, power: big ? 1.25 : 0.95, spread: 1.5 });
+    big ? sfx.levelUp() : sfx.coin(); haptic('success'); bump($('#mPill'), 'bump');
+  }, 650 + i * 850));
+}
+
+/* --- roulette → chat → start --- */
+let sitBusy = false, sitRunId = 0;
+function swapModal(html, opts = {}) {
+  modalOpts = opts;
+  const card = $('.modal-card', modalEl); card.className = `modal-card${opts.bare ? ' bare' : ''}`; card.innerHTML = html;
+  hydrate(modalEl);
+}
+function runReel(T) {
+  return new Promise((resolve) => {
+    const list = $('#reelList'), H = 76, dur = reduced() ? 300 : 2700, t0 = performance.now();
+    let last = -1;
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / dur), p = 1 - Math.pow(1 - k, 3.6);
+      list.style.transform = `translateY(${-p * (T - 1) * H}px)`;
+      const idx = Math.round(p * (T - 1)); if (idx !== last) { last = idx; sfx.tick(); if (k > 0.55) haptic(); }
+      if (k < 1) requestAnimationFrame(step); else resolve();
+    };
+    requestAnimationFrame(step);
+  });
+}
+async function startSituation(exclude = null, forceId = null) {
+  if (sitBusy) return; sitBusy = true;
+  const run = ++sitRunId;
+  // stop quietly if the modal was closed or replaced while the sequence was playing
+  const gone = () => { if (run === sitRunId && $('#sitChat')) return false; sitBusy = false; return true; };
+  unlockAudio();
+  SITUATIONS.forEach((s) => thumbUrl(`${s.icon}:0`, true));
+  const target = forceId ? sitById[forceId] : S.pickSituation(exclude);
+  const rand = () => SITUATIONS[(Math.random() * SITUATIONS.length) | 0];
+  const reel = [];
+  while (reel.length < 22) { const s = rand(); if (s.id !== target.id && s.id !== reel[reel.length - 1]?.id) reel.push(s); }
+  let tail = rand(); while (tail.id === target.id) tail = rand();
+  reel.push(target, tail);
+  const T = reel.length - 2, inCart = S.cartCount();
+  const html = `
+    <div class="sit-run" style="${sitTile(target)}">
+      <p class="eyebrow">SITUATION</p>
+      <h2 class="sit-q" id="sitQ">今回のお題は…</h2>
+      <div class="reel-wrap" id="reelWrap"><div class="reel"><ul class="reel-list" id="reelList">${reel.map((s) => `<li><span class="reel-ic" style="${sitTile(s)}"><img data-k="${s.icon}:0" alt=""></span><b>${esc(s.title)}</b></li>`).join('')}</ul></div><span class="reel-frame"></span></div>
+      <div class="chat" id="sitChat" hidden>${chatHead(target)}<div class="chat-body" id="chatBody"></div></div>
+      <div class="sit-foot" id="sitFoot" hidden>
+        <p class="sit-free">${ic('flash', 16)}予算は無制限。思うままに爆買い！</p>
+        <div class="sit-hints"><span>ヒント</span>${target.cats.map((c) => `<button class="chip" data-sit-go="${target.id}" data-sit-cat="${c}">${catById[c].short}</button>`).join('')}</div>
+        ${inCart ? `<button class="btn-text" id="sitEmpty">いまのカート（${inCart}点）を空にしてから始める</button>` : ''}
+        <div class="sit-btns"><button class="btn-ghost" data-sit-reroll="${target.id}">別のお題</button><button class="btn-primary" data-sit-go="${target.id}">${ic('bag', 18)}買い物スタート</button></div>
+      </div>
+    </div>`;
+  if (modalOpen) swapModal(html, { locked: true }); else openModal(html, { locked: true });
+  sfx.whoosh(); haptic();
+  await wait(reduced() ? 50 : 350);
+  await runReel(T);
+  if (gone()) return;
+  $$('#reelList li')[T]?.classList.add('hit');
+  $('#sitQ').textContent = target.title; bump($('#sitQ'), 'pop');
+  sfx.reveal(1); haptic('heavy');
+  confetti({ y: innerHeight * 0.38, n: 70, power: 0.95 });
+  await wait(reduced() ? 200 : 1000);
+  if (gone()) return;
+  $('#reelWrap').hidden = true; $('#sitChat').hidden = false;
+  const body = $('#chatBody');
+  for (const text of target.msgs) {
+    const row = document.createElement('div'); row.className = 'msg-row';
+    row.innerHTML = '<div class="bubble typing"><i></i><i></i><i></i></div>';
+    body.appendChild(row);
+    await wait(reduced() ? 120 : 700);
+    if (gone()) return;
+    const b = row.firstElementChild; b.classList.remove('typing'); b.textContent = text; bump(b, 'pop');
+    sfx.msg(); haptic();
+    await wait(reduced() ? 80 : 420);
+  }
+  if (gone()) return;
+  $('#sitFoot').hidden = false; bump($('#sitFoot'), 'rise');
+  modalOpts.locked = false; sitBusy = false;
+}
+function goMission(id, cat) {
+  const s = sitById[id]; if (!s) return;
+  sitRunId++; sitBusy = false;
+  S.startMission(id);
+  modalOpts.locked = false; closeModal();
+  sfx.levelUp(); haptic('success');
+  confetti({ y: innerHeight * 0.35, n: 90 });
+  toast({ icon: 'flash', title: `お題スタート：${s.title}`, text: '思うままにカートへ入れよう！', tone: 'good', ms: 3200 });
+  if (cat) { ex.cat = cat; ex.q = ''; go('explore', { top: true }); exResults(); }
+}
+function openMission() {
+  const s = state.mission && sitById[state.mission.id]; if (!s) return;
+  const lines = S.cartLines(), n = S.cartCount();
+  openModal(`
+    <div class="sit-open" style="${sitTile(s)}">
+      <p class="eyebrow">お題に挑戦中</p><h2>${esc(s.title)}</h2>
+      <div class="chat">${chatHead(s)}<div class="chat-body">${s.msgs.map((m) => `<div class="msg-row"><div class="bubble">${esc(m)}</div></div>`).join('')}</div></div>
+      ${n ? `${haulTpl(lines, 8)}<div class="haul-stat"><b>${fmt(n)}点</b>カートに入れた<span>${yen(S.quote().subtotal)}ぶん</span></div>` : '<p class="muted">まだカートは空っぽ。思いつくままに入れていこう！</p>'}
+      <div class="sit-hints"><span>ヒント</span>${s.cats.map((c) => `<button class="chip" data-sit-cat="${c}">${catById[c].short}</button>`).join('')}</div>
+      <div class="sit-btns"><button class="btn-ghost" data-close>さらに買う</button><button class="btn-primary" data-sit-cart ${n ? '' : 'disabled'}>${ic('bag', 18)}購入へ</button></div>
+      <div class="sit-quit" id="sitQuit"><button class="btn-text" data-sit-quit>このお題をやめる</button></div>
+    </div>`);
+}
+function sitBookTpl() {
+  const recs = {}; state.missions.forEach((m) => (recs[m.id] ||= []).push(m));
+  return `<div class="stamps">${SITUATIONS.map((s) => {
+    const r = recs[s.id];
+    return r
+      ? `<button class="stamp on" data-sit-log="${s.id}" style="${sitTile(s)}"><span class="stamp-ic"><img data-k="${s.icon}:0" alt=""></span><b>${esc(s.title)}</b>${r.length > 1 ? `<small>${r.length}回</small>` : ''}</button>`
+      : '<div class="stamp"><span class="stamp-ic">?</span><b>？？？</b></div>';
+  }).join('')}</div>
+  <button class="btn-ghost sit-book-go" data-sit-start>${ic('flash', 18)}${state.mission ? '挑戦中のお題を見る' : 'シチュエーションをはじめる'}</button>`;
+}
+function showSitLog(id) {
+  const s = sitById[id], r = state.missions.find((m) => m.id === id); if (!s || !r) return;
+  const lines = r.keys.map((k) => { const [pid, v] = k.split(':'); return { id: pid, v: +v, qty: 1 }; }).filter((l) => byId[l.id]);
+  const d = new Date(r.at);
+  openModal(`
+    <div class="sit-open" style="${sitTile(s)}">
+      <p class="eyebrow">${d.getMonth() + 1}月${d.getDate()}日の思い出</p><h2>${esc(s.title)}</h2>
+      <div class="chat">${chatHead(s)}<div class="chat-body">
+        <div class="msg-row"><div class="bubble">${esc(s.msgs[0])}</div></div>
+        <div class="msg-row me"><div class="bubble">${fmt(r.count)}点、買ってきたよ！</div></div>
+        <div class="msg-row"><div class="bubble">${esc(s.reply)}</div></div>
+      </div></div>
+      ${haulTpl(lines, 12)}
+      <div class="haul-stat"><b>${fmt(r.count)}点</b>を爆買い<span>${yen(r.total)}ぶん</span></div>
+      <div class="sit-btns"><button class="btn-ghost" data-close>とじる</button><button class="btn-primary" data-sit-again="${s.id}" ${state.mission ? 'disabled' : ''}>${ic('repeat', 18)}もう一度あそぶ</button></div>
+    </div>`);
 }
 
 /* ================= modal & toasts ================= */
@@ -788,6 +1000,12 @@ S.on((topic) => {
     if (cur === 'cart') renderCart();
     const hs = $('#homeShip'); if (hs) hs.innerHTML = shipBanner();
     const ps = $('#pdShip'); if (ps) { const q = S.quote(); ps.innerHTML = `${ic('gift', 20)}<span>${q.toFree > 0 ? `<b>あと${yen(q.toFree)}で送料無料</b>` : '<b>送料無料</b>'}カートの商品と合わせて計算</span>`; }
+    if (state.mission) { refreshSitCard(); updatePill(); milestoneFx(); }
+  }
+  if (topic === 'mission' || topic === 'order' || topic === 'reset') {
+    renderPill(); refreshSitCard();
+    if (cur === 'cart' && topic === 'mission') renderCart();
+    if (cur === 'me' && topic === 'mission') renderMe();
   }
   if (topic === 'wish' && cur === 'me') renderMe();
   if (topic === 'reset') { $$('.view').forEach((v) => delete v.dataset.ready); render(cur, true); }
@@ -799,6 +1017,22 @@ document.addEventListener('click', (e) => {
   unlockAudio();
   const d = t.dataset;
   if (d.tab) { haptic(); sfx.tap(); if (sheet.p) closeSheet(); go(d.tab, { focus: !!d.focus }); return; }
+  if (d.sitStart !== undefined) { if (sheet.p) closeSheet(); state.mission ? openMission() : startSituation(); return; }
+  if (d.sitAgain) { startSituation(null, d.sitAgain); return; }
+  if (d.sitReroll) { startSituation(d.sitReroll); return; }
+  if (d.sitGo) { goMission(d.sitGo, d.sitCat); return; }
+  if (d.sitCat) { closeModal(); ex.cat = d.sitCat; ex.q = ''; go('explore', { top: true }); exResults(); return; }
+  if (d.sitOpen !== undefined) { openMission(); sfx.tap(); return; }
+  if (d.sitCart !== undefined) { closeModal(); go('cart', { top: true }); return; }
+  if (d.sitQuit !== undefined) { $('#sitQuit').innerHTML = '<span>やめても、カートの中身はそのまま残ります</span><button class="btn-text" data-sit-quit-no>つづける</button><button class="btn-text danger" data-sit-quit-yes>やめる</button>'; return; }
+  if (d.sitQuitNo !== undefined) { $('#sitQuit').innerHTML = '<button class="btn-text" data-sit-quit>このお題をやめる</button>'; return; }
+  if (d.sitQuitYes !== undefined) { S.quitMission(); closeModal(); toast({ icon: 'info', title: 'お題をやめました', text: 'カートの中身はそのまま残っています' }); return; }
+  if (d.sitLog) { showSitLog(d.sitLog); return; }
+  if (t.id === 'sitEmpty') {
+    state.cart.length = 0; S.emit('cart'); t.remove();
+    if (state.mission) { state.mission.peakN = 0; state.mission.peakY = 0; }
+    toast({ icon: 'trash', title: 'カートを空にしました', ms: 1600 }); return;
+  }
   if (d.wish) { toggleWish(t); return; }
   if (d.add) { quickAdd(t); return; }
   if (d.p) { openProduct(d.p, +(d.v || 0)); return; }
@@ -838,6 +1072,7 @@ document.addEventListener('gesturestart', (e) => e.preventDefault());
 
 /* ================= boot ================= */
 updateBadges();
+renderPill();
 const start = (location.hash || '').slice(1);
 go(TABS.some((t) => t.id === start) ? start : 'home', { force: true });
 setInterval(() => {

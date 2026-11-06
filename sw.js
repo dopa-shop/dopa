@@ -1,8 +1,8 @@
 // dopa — offline cache. Bump VERSION when shipping changes.
-const VERSION = 'dopa-v2';
+const VERSION = 'dopa-v3';
 const SHELL = [
   './', 'index.html', 'app.css', 'manifest.webmanifest',
-  'js/main.js', 'js/render3d.js', 'js/models.js', 'js/catalog.js', 'js/store.js', 'js/fx.js', 'js/icons.js',
+  'js/main.js', 'js/render3d.js', 'js/models.js', 'js/catalog.js', 'js/store.js', 'js/fx.js', 'js/icons.js', 'js/situations.js',
   'vendor/three.module.min.js', 'vendor/three.core.min.js', 'vendor/RoomEnvironment.js', 'vendor/RoundedBoxGeometry.js', 'vendor/BufferGeometryUtils.js',
   'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png',
 ];

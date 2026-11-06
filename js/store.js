@@ -1,5 +1,6 @@
 // dopa — app state, persisted per device in localStorage.
 import { byId, PRODUCTS, CATS } from './catalog.js';
+import { SITUATIONS, sitById, COUNT_MILESTONES, YEN_MILESTONES } from './situations.js';
 
 const KEY = 'dopa.state.v1';
 export const FREE_SHIP = 3500;
@@ -50,6 +51,9 @@ export const BADGES = [
   { id: 'catall', name: '全カテゴリ制覇', desc: `全${CATS.length}カテゴリの商品を買う`, icon: 'crown', test: (s) => catsBought(s) >= CATS.length },
   { id: 'jackpot', name: '大当たり', desc: 'ガチャでURを引く', icon: 'trophy', test: (s) => !!s.gotUR },
   { id: 'col30', name: 'マスターコレクター', desc: 'コレクションを30種集める', icon: 'gem', test: (s) => s.collection.length >= 30 },
+  { id: 'sit1', name: 'はじめての爆買い', desc: 'シチュエーションを1つ遊ぶ', icon: 'flash', test: (s) => s.missions.length >= 1 },
+  { id: 'sit10', name: '爆買いの達人', desc: 'シチュエーションを10種遊ぶ', icon: 'spark', test: (s) => new Set(s.missions.map((m) => m.id)).size >= 10 },
+  { id: 'sitall', name: 'シチュエーション制覇', desc: `全${SITUATIONS.length}種のシチュエーションを遊ぶ`, icon: 'crown', test: (s) => new Set(s.missions.map((m) => m.id)).size >= SITUATIONS.length },
 ];
 function catsBought(s) { const set = new Set(); s.orders.forEach((o) => o.lines.forEach((l) => byId[l.id] && set.add(byId[l.id].cat))); return set.size; }
 
@@ -60,6 +64,7 @@ function fresh() {
     points: 500, xp: 0, spent: 0, tickets: 2, gachaCount: 0, gotUR: false,
     coupons: [{ id: 'welcome', rarity: 'R', kind: 'pct', val: 10, label: 'はじめての10%OFFクーポン' }],
     applied: 'welcome', usePoints: false, daily: '', badges: [],
+    mission: null, missions: [],
     settings: { sound: true, haptics: true },
   };
 }
@@ -141,18 +146,56 @@ export function placeOrder(q = quote()) {
     subtotal: q.subtotal, total: q.total, earn: q.earn, discount: q.discount, pointsUsed: q.pointsUsed,
     opened: false, notified: false,
   };
+  // a scenario in progress is completed by this order: no score, just a keepsake entry
+  let mission = null;
+  if (state.mission && sitById[state.mission.id]) {
+    order.mission = state.mission.id;
+    mission = {
+      id: state.mission.id, at: order.at, no: order.no,
+      count: q.lines.reduce((a, l) => a + l.qty, 0), total: q.subtotal,
+      keys: q.lines.slice(0, 12).map((l) => `${l.id}:${l.v}`),
+    };
+    state.missions.unshift(mission);
+    state.mission = null;
+  }
   state.orders.unshift(order);
   state.points = state.points - q.pointsUsed + q.earn;
   state.spent += q.subtotal;
   state.xp += Math.floor(q.subtotal / 100);
-  state.tickets += 1;
+  state.tickets += mission ? 2 : 1;
   if (q.coupon) { state.coupons = state.coupons.filter((c) => c.id !== q.coupon.id); }
   state.applied = state.coupons[0]?.id || null;
   state.usePoints = false;
   state.cart = [];
   emit('order');
-  return { order, before, after: rankOf() };
+  return { order, before, after: rankOf(), mission };
 }
+
+/* ---------- シチュエーション爆買い ---------- */
+export function pickSituation(exclude) {
+  const done = new Set(state.missions.map((m) => m.id));
+  let pool = SITUATIONS.filter((s) => s.id !== exclude && !done.has(s.id));
+  if (!pool.length) pool = SITUATIONS.filter((s) => s.id !== exclude);
+  return pool[Math.floor(Math.random() * pool.length)];
+}
+export function startMission(id) {
+  const n = cartCount(), y = cartLines().reduce((a, l) => a + l.sum, 0);
+  state.mission = { id, at: Date.now(), peakN: n, peakY: y };
+  emit('mission');
+}
+export function quitMission() { state.mission = null; emit('mission'); }
+// Returns the milestones crossed since the last check (item counts and yen totals).
+export function missionMilestones() {
+  const m = state.mission; if (!m) return [];
+  const n = cartCount(), y = cartLines().reduce((a, l) => a + l.sum, 0), hit = [];
+  for (const k of COUNT_MILESTONES) if (n >= k && m.peakN < k) hit.push({ kind: 'n', v: k });
+  for (const k of YEN_MILESTONES) if (y >= k && m.peakY < k) hit.push({ kind: 'y', v: k });
+  if (n > m.peakN) m.peakN = n;
+  if (y > m.peakY) m.peakY = y;
+  if (hit.length) save();
+  return hit;
+}
+export const doneSituations = () => new Set(state.missions.map((m) => m.id));
 export function stageOf(o, now = Date.now()) {
   const sec = (now - o.at) / 1000;
   let i = 0; while (i + 1 < STAGES.length && sec >= STAGES[i + 1].t) i++;
