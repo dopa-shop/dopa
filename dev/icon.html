@@ -1,0 +1,16 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>icon render</title></head>
+<body style="margin:0;background:#222">
+<img id="out" alt="" style="width:256px">
+<script type="module">
+// Renders the app icon (3D shopping bag) with the same studio as the app.
+import { ThumbFactory } from '../js/render3d.js';
+const tf = new ThumbFactory();
+const url = await tf.get('icon', { model: 'bag', variant: { c: '#ff2d6f', c2: '#ffffff' }, size: 1024, bg: ['#ffe9f1', '#ffc4d8'], margin: 0.66, format: 'image/png' });
+const blob = await (await fetch(url)).blob();
+const buf = new Uint8Array(await blob.arrayBuffer());
+let bin = ''; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+window.__png = btoa(bin);
+document.getElementById('out').src = url;
+window.__done = true;
+</script></body></html>
