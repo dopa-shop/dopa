@@ -1,5 +1,5 @@
 // dopa — offline cache. Bump VERSION when shipping changes.
-const VERSION = 'dopa-v3';
+const VERSION = 'dopa-v4';
 const SHELL = [
   './', 'index.html', 'app.css', 'manifest.webmanifest',
   'js/main.js', 'js/render3d.js', 'js/models.js', 'js/catalog.js', 'js/store.js', 'js/fx.js', 'js/icons.js', 'js/situations.js',

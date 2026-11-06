@@ -3,17 +3,26 @@
 <style>body{margin:0;background:#eee;font:12px sans-serif}#g{display:grid;grid-template-columns:repeat(var(--cols,8),1fr);gap:4px;padding:4px}figure{margin:0;background:#fff}img{width:100%;display:block}figcaption{padding:2px 4px}</style>
 </head><body><div id="g"></div>
 <script type="module">
+// Dev contact sheet. ?only=a,b  ?cols=6  ?size=300  ?pv=wine:1,banana:2 (catalog product variants)
 import { ThumbFactory } from '../js/render3d.js';
 import { MODELS } from '../js/models.js';
+import { byId } from '../js/catalog.js';
+const q = new URLSearchParams(location.search);
 const tf = new ThumbFactory();
-const keys = Object.keys(MODELS);
-const only = new URLSearchParams(location.search).get('only');
-const list = only ? keys.filter(k => only.split(',').includes(k)) : keys;
-const g = document.getElementById('g'); g.style.setProperty('--cols', new URLSearchParams(location.search).get('cols')||8);
-let done = 0; const t0 = performance.now();
-for (const k of list) {
-  const f = document.createElement('figure'); const img = new Image(); f.append(img); const cap = document.createElement('figcaption'); cap.textContent = k; f.append(cap); g.append(f);
-  tf.get(k, { model: k, variant: {}, size: +(new URLSearchParams(location.search).get('size')||320), bg: ['#f3eefc', '#e2dcf0'] }).then(u => { img.src = u; if (++done === list.length) { window.__done = true; window.__ms = performance.now() - t0; } });
+const size = +(q.get('size') || 320);
+let jobs;
+if (q.get('pv')) {
+  jobs = q.get('pv').split(',').map((s) => { const [id, vi] = s.split(':'); const p = byId[id], v = p.variants[+vi || 0]; return { label: `${id}:${v.n}`, model: p.model, variant: v }; });
+} else {
+  const keys = Object.keys(MODELS), only = q.get('only');
+  jobs = (only ? keys.filter((k) => only.split(',').includes(k)) : keys).map((k) => ({ label: k, model: k, variant: {} }));
 }
-window.addEventListener('error', e => { window.__err = (window.__err||'') + e.message + '\n'; });
+const g = document.getElementById('g'); g.style.setProperty('--cols', q.get('cols') || 8);
+let done = 0; const t0 = performance.now();
+jobs.forEach((j, i) => {
+  const f = document.createElement('figure'), img = new Image(), cap = document.createElement('figcaption');
+  cap.textContent = j.label; f.append(img, cap); g.append(f);
+  tf.get('job' + i, { model: j.model, variant: j.variant, size, bg: ['#f3eefc', '#e2dcf0'] }).then((u) => { img.src = u; if (++done === jobs.length) { window.__done = true; window.__ms = performance.now() - t0; } });
+});
+window.addEventListener('error', (e) => { window.__err = (window.__err || '') + e.message + '\n'; });
 </script></body></html>

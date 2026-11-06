@@ -153,7 +153,7 @@ function place(o, p, r, s) {
   return o;
 }
 const M = (geo, material, p, r, s) => place(new THREE.Mesh(geo, material), p, r, s);
-const G = (children, p, r, s) => { const g = new THREE.Group(); children.flat().forEach((c) => c && g.add(c)); return place(g, p, r, s); };
+const G = (children, p, r, s) => { const g = new THREE.Group(); children.flat(Infinity).forEach((c) => c && g.add(c)); return place(g, p, r, s); };
 
 function rng(seed = 1) {
   let a = seed >>> 0;
@@ -1912,6 +1912,859 @@ reg('lantern', ({ c = '#7a8450' }) => {
     M(cyl(0.08, 0.08, 0.03, 24), mat.gloss('#26252c'), [0, 0.12, 0.395], [PI / 2, 0, 0]),
   ]);
 }, { yaw: -0.3 });
+
+/* =========================================================
+   EXPANSION — 50 more products
+   ========================================================= */
+// cylinder spanning two points (frames, legs, arms)
+function rod(a, b, r, m, seg = 16) {
+  const A = new THREE.Vector3(a[0], a[1], a[2]), B = new THREE.Vector3(b[0], b[1], b[2]), d = B.clone().sub(A), len = d.length();
+  const mesh = new THREE.Mesh(cyl(r, r, len, seg), m);
+  mesh.position.copy(A).add(B).multiplyScalar(0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  return mesh;
+}
+const scaleAbout = (g, s, cx, cy) => { g.translate(-cx, -cy, 0); g.scale(s, s, 1); g.translate(cx, cy, 0); return g; };
+const gemMat = (c) => mat.gloss('#ffffff', { transmission: 1, ior: 2.2, thickness: 0.35, roughness: 0, clearcoat: 0, attenuationColor: c, attenuationDistance: 0.25, dispersion: 4, flatShading: true, specularIntensity: 1 });
+function halfDisc(r) { const s = new THREE.Shape(); s.moveTo(-r, 0); s.absarc(0, 0, r, PI, TAU, false); s.closePath(); return s; }
+function halfRing(r0, r1) { const s = new THREE.Shape(); s.moveTo(-r1, 0); s.absarc(0, 0, r1, PI, TAU, false); s.lineTo(r0, 0); s.absarc(0, 0, r0, TAU, PI, true); s.closePath(); return s; }
+// Packaging art: the left half of the canvas is printed on the front (+z), the right half on the back.
+// Pair with planarUV so the art is projected flat instead of following the shape's own UVs.
+function frontTex(draw, base, h = 512) {
+  return ctex(1024, h, (g, w, hh) => { g.fillStyle = base; g.fillRect(0, 0, w, hh); g.save(); draw(g, 512, hh); g.restore(); });
+}
+function planarUV(geo, w, h) {
+  const p = geo.attributes.position, n = geo.attributes.normal, uv = new Float32Array(p.count * 2);
+  for (let i = 0; i < p.count; i++) {
+    const x = Math.min(1, Math.max(0, p.getX(i) / w + 0.5)), y = p.getY(i) / h + 0.5;
+    uv[i * 2] = n.getZ(i) >= 0 ? x * 0.5 : 0.5 + (1 - x) * 0.5; uv[i * 2 + 1] = y;
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  return geo;
+}
+
+/* ---------------- food ---------------- */
+reg('sandwich', ({ c = '#ffd43b', kind = 'egg' }) => {
+  const tri = rpoly([[-0.62, 0], [0.62, 0], [0, 0.66]], [0.08, 0.08, 0.1]);
+  const L = (col, d, z, s = 1, o = {}) => M(scaleAbout(ext(tri, d, { bevel: 0.022, seg: 3 }), s, 0, 0.24), mat.satin(col, { roughness: 0.65, ...o }), [0, 0, z]);
+  const one = () => {
+    const parts = [L('#f8ecd2', 0.05, 0.18), L('#f8ecd2', 0.05, -0.18)];
+    if (kind === 'ham') {
+      const lettuce = scaleAbout(ext(tri, 0.025, { bevel: 0.015, seg: 2 }), 1.08, 0, 0.24);
+      deform(lettuce, (v) => { v.z += 0.014 * Math.sin(v.x * 40 + v.y * 30); });
+      parts.push(M(lettuce, mat.gloss('#6cc04a', { roughness: 0.35 }), [0, 0, 0.075]), L(c, 0.05, 0.0, 1.03, { roughness: 0.4 }), L('#ffd43b', 0.03, -0.075, 1.05));
+    } else if (kind === 'fruit') {
+      parts.push(L('#fffaf0', 0.24, 0, 1.04, { roughness: 0.5 }));
+      const pts = [0.25, 0.55, 0.8].flatMap((t) => [[-0.62 + 0.62 * t, 0.66 * t], [0.62 - 0.62 * t, 0.66 * t]]).concat([[-0.25, 0.02], [0.25, 0.02]]);
+      parts.push(M(scatter(sph(0.07, 20, 14), pts.map(([x, y]) => ({ p: [x * 0.97, y * 0.97 + 0.01, 0], s: [1, 1, 0.75] }))), mat.gloss(c, { roughness: 0.2 })));
+    } else parts.push(L(c, 0.24, 0, 1.06, { roughness: 0.8 }));
+    return G(parts);
+  };
+  return G([G([one()], [-0.32, 0.04, 0.05], [0, 0.35, 0]), G([one()], [0.38, 0.04, -0.3], [0, -0.45, 0])]);
+}, { yaw: -0.2, elev: 0.28 });
+
+reg('bento', ({ c = '#c92a2a' }) => {
+  const box = mat.gloss(c, { roughness: 0.18, clearcoat: 1 });
+  const W = 1.4, D = 0.95, H = 0.26, wall = (w, h, d, p) => M(rbox(w, h, d, 0.02, 2), box, p);
+  const rice = pebble(0.62, 0.16, 0.84, 0.25, 0.5);
+  const sesame = scatter(sph(0.012, 6, 4), surfacePts(rice, 40, rng(5), (p) => p.y > 0.04).map((o) => ({ ...o, s: [1.6, 0.6, 0.8] })));
+  const fried = mat.satin('#b0652a', { roughness: 0.7, bumpMap: noiseTex(256, 2, 900, 4), bumpScale: 2 });
+  return G([
+    M(rbox(W, 0.05, D, 0.02, 2), box, [0, 0.025, 0]),
+    wall(W, H, 0.05, [0, H / 2, D / 2 - 0.025]), wall(W, H, 0.05, [0, H / 2, -D / 2 + 0.025]),
+    wall(0.05, H, D, [W / 2 - 0.025, H / 2, 0]), wall(0.05, H, D, [-W / 2 + 0.025, H / 2, 0]),
+    M(rbox(0.035, H - 0.04, D - 0.06, 0.01, 1), box, [-0.02, H / 2, 0]),
+    G([M(rice, mat.satin('#fbf8f0', { roughness: 0.85 })), M(sesame, mat.matte('#1d1d1d')), M(sph(0.06, 24, 16), mat.gloss('#d6274f'), [0, 0.07, 0], null, [1, 0.8, 1])], [-0.36, 0.12, 0]),
+    M(scatter(pebble(0.2, 0.15, 0.18, 0.7), [[0.15, -0.25], [0.34, -0.28], [0.24, -0.1]].map(([x, z]) => ({ p: [x, 0.14, z], r: [0.3, x * 5, 0.2] }))), fried),
+    M(scatter(rbox(0.13, 0.12, 0.18, 0.04, 3), [{ p: [0.53, 0.11, -0.25] }, { p: [0.53, 0.11, -0.05] }]), mat.satin('#ffd43b', { roughness: 0.45 })),
+    M(scatter(cap(0.045, 0.1, 6, 16), [{ p: [0.15, 0.09, 0.2], r: [0, 0.3, PI / 2] }, { p: [0.3, 0.09, 0.3], r: [0, -0.4, PI / 2] }]), mat.gloss('#e8590c', { roughness: 0.3 })),
+    G([M(cyl(0.03, 0.04, 0.1, 12), mat.satin('#8bc34a'), [0, 0.05, 0]), M(pebble(0.16, 0.12, 0.16, 0.7), mat.satin('#2b8a3e', { roughness: 0.8, bumpMap: noiseTex(256, 7, 1600, 3), bumpScale: 3 }), [0, 0.12, 0])], [0.5, 0.06, 0.27]),
+    M(sph(0.065, 24, 16), mat.gloss('#e03131', { roughness: 0.1 }), [0.36, 0.1, 0.1]),
+  ]);
+}, { elev: 0.72, yaw: -0.2 });
+
+reg('eggs', ({ c = '#f7f3ea' }) => {
+  const egg = lathe([[0, 0], [0.09, 0.01], [0.13, 0.06], [0.14, 0.13], [0.11, 0.22], [0.06, 0.27], [0, 0.28]]);
+  const pulp = mat.matte('#d3d5d9', { roughness: 0.95, bumpMap: noiseTex(256, 3, 1500, 3), bumpScale: 1.5 });
+  const r = rng(9), pos = [];
+  for (let i = 0; i < 5; i++) for (let j = 0; j < 2; j++) pos.push({ p: [-0.56 + i * 0.28, 0.1, -0.14 + j * 0.28], r: [(r() - 0.5) * 0.2, r() * 3, (r() - 0.5) * 0.2] });
+  return G([
+    M(rbox(1.5, 0.12, 0.66, 0.04, 3), pulp, [0, 0.06, 0]),
+    M(scatter(cyl(0.12, 0.09, 0.08, 20), pos.map((o) => ({ p: [o.p[0], 0.13, o.p[2]] }))), pulp),
+    M(scatter(egg, pos), mat.satin(c, { roughness: 0.55 })),
+    G([M(rbox(1.5, 0.1, 0.66, 0.04, 3), pulp, [0, 0.05, 0.33])], [0, 0.12, -0.33], [-1.95, 0, 0]),
+  ]);
+}, { elev: 0.5, yaw: -0.25 });
+
+reg('banana', ({ c = '#ffd43b', spots = false }) => {
+  const rs = rng(4);
+  const one = () => {
+    const g = lathe([[0, 0], [0.03, 0.02], [0.07, 0.12], [0.1, 0.35], [0.1, 0.7], [0.075, 0.93], [0.035, 1.05], [0.03, 1.15], [0, 1.16]], { segs: 40 });
+    deform(g, (v) => { const th = Math.atan2(v.z, v.x), k = 1 + 0.07 * Math.cos(th * 5); v.x *= k; v.z *= k; v.x += 0.35 * (v.y - 0.5) ** 2 - 0.09; });
+    g.translate(0, -1.16, 0);
+    vcolor(g, (v) => (v.y < -1.11 ? '#3b2a1a' : v.y > -0.12 ? mix(c, '#5c7a2a', 0.7) : spots && Math.sin(v.x * 70) * Math.sin(v.y * 53) * Math.sin(v.z * 61) > 0.55 ? '#6b4423' : c));
+    return M(g, mat.satin('#ffffff', { vertexColors: true, roughness: 0.42 }));
+  };
+  return G([
+    [-0.38, -0.12, 0.12, 0.36].map((a, i) => G([one()], [-0.55, 0.22 + i * 0.05 + rs() * 0.02, 0], [0, a, PI / 2])),
+    M(cyl(0.06, 0.07, 0.16, 16), mat.satin('#5c4a2a'), [-0.62, 0.3, 0], [0, 0, PI / 2]),
+  ]);
+}, { yaw: -0.5, elev: 0.45 });
+
+reg('takoyaki', ({ c = '#4a2511' }) => {
+  const tray = mat.matte('#e9d8b4', { roughness: 0.9 });
+  const ball = sph(0.16, 40, 28); deform(ball, (v) => v.multiplyScalar(1 + 0.03 * Math.sin(v.x * 50) * Math.sin(v.z * 47 + v.y * 20)));
+  const balls = [], tops = [];
+  for (let i = 0; i < 2; i++) for (let j = 0; j < 4; j++) { const p = [(i - 0.5) * 0.34, 0.2, -0.48 + j * 0.32]; balls.push({ p }); tops.push({ p: [p[0], p[1] + 0.005, p[2]] }); }
+  const mayo = []; for (let k = 0; k <= 14; k++) mayo.push([(k % 2 ? 0.2 : -0.2), 0.37, -0.6 + k * 0.086]);
+  const r = rng(12);
+  return G([
+    M(rbox(0.8, 0.03, 1.32, 0.01, 1), tray, [0, 0.015, 0]),
+    M(scatter(rbox(0.8, 0.12, 0.03, 0.01, 1), [{ p: [0, 0.06, 0.65] }, { p: [0, 0.06, -0.65] }]), tray),
+    M(scatter(rbox(0.03, 0.12, 1.32, 0.01, 1), [{ p: [0.4, 0.06, 0] }, { p: [-0.4, 0.06, 0] }]), tray),
+    M(scatter(ball, balls), mat.satin('#d98b3e', { roughness: 0.6 })),
+    M(scatter(sph(0.166, 40, 16, 0, TAU, 0, 1.05), tops), mat.gloss(c, { roughness: 0.15, clearcoat: 1 })),
+    M(tube(mayo, 0.016, 120, 8), mat.satin('#fff8e1', { roughness: 0.35 })),
+    M(scatter(rbox(0.025, 0.006, 0.02, 0.003, 1), Array.from({ length: 50 }, () => ({ p: [(r() - 0.5) * 0.6, 0.355 + r() * 0.01, (r() - 0.5) * 1.1], r: [0, r() * 3, 0] }))), mat.satin('#3d8b37')),
+    M(scatter(rbox(0.07, 0.004, 0.04, 0.002, 1), Array.from({ length: 16 }, () => ({ p: [(r() - 0.5) * 0.5, 0.37, (r() - 0.5) * 1.0], r: [r() * 0.6, r() * 3, r() * 0.6] }))), mat.satin('#e6b8a2', { roughness: 0.8 })),
+    rod([0.17, 0.25, -0.16], [0.4, 0.62, -0.3], 0.008, mat.satin(WOOD)),
+  ]);
+}, { elev: 0.62, yaw: -0.3 });
+
+reg('chips', ({ c = '#ffd43b', label = 'うすしお' }) => {
+  const g = pebble(0.92, 1.25, 0.42, 0.22, 0.2, 64, 64);
+  deform(g, (v) => { const ay = Math.abs(v.y) / 0.625; v.z *= 1 - 0.85 * ay ** 5; v.x *= 1 + 0.04 * ay; });
+  planarUV(g, 0.96, 1.25);
+  const ink = lum(c) > 0.6 ? '#3b2a20' : '#ffffff';
+  const tex = frontTex((t, w, h) => {
+    t.fillStyle = 'rgba(255,255,255,0.25)'; t.beginPath(); t.arc(w / 2, h * 0.62, 150, 0, TAU); t.fill();
+    t.fillStyle = '#f5c242'; [[-60, 20], [50, -10], [10, 70]].forEach(([dx, dy]) => { t.beginPath(); t.ellipse(w / 2 + dx, h * 0.64 + dy, 70, 52, dx / 100, 0, TAU); t.fill(); });
+    txt(t, 'POTATO', w / 2, h * 0.2, 64, ink, { weight: 900 });
+    txt(t, 'CHIPS', w / 2, h * 0.32, 64, ink, { weight: 900 });
+    txt(t, label, w / 2, h * 0.88, 44, ink, { weight: 800 });
+  }, hex(c), 676);
+  const crimp = mat.satin(hsl(c, 0, 0, -0.08), { roughness: 0.4, bumpMap: noiseTex(256, 4, 400, 6), bumpScale: 3 });
+  const chip = sph(0.13, 24, 10, 0, TAU, 0, 0.7);
+  return G([
+    G([
+      M(g, mat.gloss('#ffffff', { map: tex, roughness: 0.25, metalness: 0.2 })),
+      M(rbox(0.92, 0.07, 0.05, 0.02, 2), crimp, [0, 0.6, 0]), M(rbox(0.92, 0.07, 0.05, 0.02, 2), crimp, [0, -0.6, 0]),
+    ], [0, 0.66, 0], [-0.12, 0, 0.06]),
+    M(scatter(chip, [[0.6, 0.25, 0.4, 0.3], [0.38, 0.45, 0.2, -0.4], [-0.5, 0.35, 0.8, 0.5]].map(([x, z, a, b]) => ({ p: [x, 0.03, z], r: [a, b, 0.3] }))), mat.satin('#f2c14e', { roughness: 0.5 })),
+  ]);
+}, { yaw: -0.3 });
+
+reg('watermelon', ({ c = '#ff4d5e' }) => {
+  const slice = () => {
+    const r = rng(6), seeds = [];
+    for (let i = 0; i < 14; i++) { const a = PI + 0.3 + r() * (PI - 0.6), d = 0.2 + r() * 0.3; for (const z of [0.132, -0.132]) seeds.push({ p: [Math.cos(a) * d, Math.sin(a) * d, z], r: [0, 0, a + PI / 2], s: [0.55, 1, 0.3] }); }
+    return G([
+      M(ext(halfDisc(0.6), 0.22, { bevel: 0.02, seg: 2 }), mat.satin(c, { roughness: 0.35, clearcoat: 0.5 })),
+      M(ext(halfRing(0.6, 0.67), 0.2, { bevel: 0.015, seg: 2 }), mat.satin('#f1f6dc', { roughness: 0.5 })),
+      M(ext(halfRing(0.665, 0.72), 0.18, { bevel: 0.02, seg: 2 }), mat.gloss('#2f7d32', { roughness: 0.3 })),
+      M(scatter(sph(0.022, 10, 8), seeds), mat.gloss('#1b1b1b')),
+    ]);
+  };
+  return G([G([slice()], [-0.3, 0.74, 0], [0, 0.3, 0]), G([slice()], [0.45, 0.13, 0.4], [-PI / 2, 0, 0.6])]);
+}, { yaw: -0.3 });
+
+reg('wine', ({ c = '#4a0d1a', w = '#7b1e3a', label = 'ROUGE' }) => {
+  const bottle = lathe([[0, 0], [0.29, 0], [0.32, 0.03], [0.32, 0.95], [0.29, 1.1], [0.15, 1.3], [0.11, 1.42], [0.11, 1.75], [0, 1.75]]);
+  const glass = lathe([[0, 0], [0.2, 0], [0.2, 0.015], [0.04, 0.03], [0.022, 0.08], [0.022, 0.4], [0.07, 0.46], [0.17, 0.56], [0.2, 0.7], [0.19, 0.84], [0.18, 0.86]]);
+  return G([
+    M(bottle, mat.glass(c, { attenuationDistance: 0.12, thickness: 0.8, roughness: 0.05 })),
+    wrapLabel(bottle, 0.32, 0.72, { bg: '#f3ead8', ink: '#3b2a20', accent: hex(w), title: 'CHÂTEAU DOPA', sub: `${label} · 2019`, turn: 0.35 }),
+    M(cyl(0.118, 0.118, 0.32, 32), mat.metal(mix(w, '#c9a227', 0.5), 0.25), [0, 1.6, 0]),
+    G([
+      M(lathe([[0, 0.47], [0.07, 0.47], [0.16, 0.55], [0.19, 0.62], [0, 0.62]]), mat.gloss(w, { roughness: 0.05, clearcoat: 1 })),
+      M(glass, mat.glass('#ffffff', { thickness: 0.05, roughness: 0.02, side: THREE.DoubleSide })),
+    ], [0.55, 0, 0.25]),
+  ]);
+}, { yaw: -0.35 });
+
+/* ---------------- fashion ---------------- */
+reg('dress', ({ c = '#ff8fab', c2 = '#ffffff' }) => {
+  const shape = rpoly([[-0.17, 0.98], [-0.33, 0.96], [-0.5, 0.78], [-0.4, 0.66], [-0.3, 0.72], [-0.25, 0.32], [-0.68, -0.72], [0.68, -0.72], [0.25, 0.32], [0.3, 0.72], [0.4, 0.66], [0.5, 0.78], [0.33, 0.96], [0.17, 0.98], [0, 0.82]],
+    [0.04, 0.08, 0.06, 0.04, 0.03, 0.04, 0.08, 0.08, 0.04, 0.03, 0.04, 0.06, 0.08, 0.04, 0.16]);
+  const g = ext(shape, 0.12, { bevel: 0.07, seg: 6 });
+  deform(g, (v) => { if (v.y < 0.2) { const t = (0.2 - v.y) / 0.92; v.z += 0.07 * Math.sin(v.x * 16) * t; } });
+  const collar = ext(halfDisc(0.11), 0.01, { bevel: 0.012, seg: 2 });
+  return G([
+    M(g, mat.soft(c)),
+    M(rbox(0.66, 0.08, 0.31, 0.03, 3), mat.satin(c2, { roughness: 0.4 }), [0, 0.32, 0]),
+    M(scatter(pebble(0.14, 0.09, 0.05, 0.5), [{ p: [-0.08, 0.32, 0.16], r: [0, 0, 0.35] }, { p: [0.08, 0.32, 0.16], r: [0, 0, -0.35] }]), mat.satin(c2)),
+    M(sph(0.035, 16, 12), mat.satin(c2), [0, 0.32, 0.17]),
+    M(scatter(collar, [{ p: [-0.09, 0.88, 0.13], r: [0, 0, 0.5] }, { p: [0.09, 0.88, 0.13], r: [0, 0, -0.5] }]), mat.soft(c2)),
+  ], [0, 0.72, 0]);
+}, { yaw: -0.25, elev: 0.15 });
+
+reg('necklace', ({ c = '#ff4d8d' }) => {
+  const curve = new THREE.CatmullRomCurve3([[-0.42, -0.3], [-0.4, 0.05], [-0.2, 0.3], [0, 0.36], [0.2, 0.3], [0.4, 0.05], [0.42, -0.3], [0.2, -0.42], [-0.2, -0.42]].map(([x, z]) => new THREE.Vector3(x, 0.135, z)), true);
+  const beads = curve.getSpacedPoints(120).map((p) => ({ p: p.toArray() }));
+  const heart = ext(heartShape(0.28), 0.04, { bevel: 0.02, seg: 3 }); heart.rotateX(-PI / 2);
+  return G([
+    M(rbox(1.25, 0.12, 1.05, 0.06, 4), mat.soft('#2f3e75', { roughness: 1 }), [0, 0.06, 0]),
+    M(scatter(sph(0.012, 8, 6), beads), mat.metal(GOLD, 0.15)),
+    M(tor(0.03, 0.008, 8, 20), mat.metal(GOLD, 0.15), [0, 0.14, 0.39], [PI / 2, 0, 0]),
+    M(heart, gemMat(c), [0, 0.16, 0.53]),
+    M(ext(heartShape(0.32), 0.02, { bevel: 0.01, seg: 2 }).rotateX(-PI / 2), mat.metal(GOLD, 0.15), [0, 0.135, 0.53]),
+  ], null, [0.4, 0, 0]);
+}, { yaw: -0.2, elev: 0.45 });
+
+reg('necktie', ({ c = '#1e3a8a', c2 = '#e9c07c' }) => {
+  const stripes = ctex(256, 256, (g, w, h) => { g.fillStyle = hex(c); g.fillRect(0, 0, w, h); g.strokeStyle = hex(c2); g.lineWidth = 16; for (let i = -w; i < w * 2; i += 85) { g.beginPath(); g.moveTo(i, 0); g.lineTo(i + h, h); g.stroke(); } }, { repeat: [3, 3] });
+  const blade = ext(rpoly([[-0.07, 0.62], [0.07, 0.62], [0.17, -0.62], [0, -0.8], [-0.17, -0.62]], [0.02, 0.02, 0.04, 0.03, 0.04]), 0.02, { bevel: 0.015, seg: 2, soft: false });
+  const knot = ext(rpoly([[-0.11, 0.8], [0.11, 0.8], [0.07, 0.62], [-0.07, 0.62]], 0.03), 0.06, { bevel: 0.025, seg: 3 });
+  const tie = G([M(blade, mat.satin('#ffffff', { map: stripes, roughness: 0.35, clearcoat: 0.4 })), M(knot, mat.satin(c, { roughness: 0.35 }))], [0, 0.17, 0.05], [-PI / 2, 0, 0.1], 0.62);
+  const collar = ext(rpoly([[0, 0], [0.32, 0.06], [0.2, 0.26]], 0.03), 0.01, { bevel: 0.012, seg: 2 });
+  return G([
+    M(rbox(0.95, 0.12, 1.2, 0.05, 4), mat.soft('#f8f9fb'), [0, 0.06, 0]),
+    M(collar, mat.soft('#ffffff'), [-0.02, 0.135, -0.42], [-PI / 2, 0, -0.2]),
+    M(collar, mat.soft('#ffffff'), [0.02, 0.135, -0.42], [-PI / 2, PI, -0.2]),
+    tie,
+  ]);
+}, { yaw: -0.25, elev: 0.55 });
+
+reg('suitcase', ({ c = '#4dabf7' }) => {
+  const m = mat.gloss(c, { roughness: 0.2, clearcoat: 1 }), dark = mat.satin('#2b2a33', { roughness: 0.5 }), metal = mat.metal(SILVER, 0.2);
+  return G([
+    M(rbox(0.78, 1.0, 0.42, 0.1, 5), m, [0, 0.58, 0]),
+    M(scatter(rbox(0.06, 0.84, 0.03, 0.015, 2), [-0.24, -0.08, 0.08, 0.24].map((x) => ({ p: [x, 0.58, 0.212] }))), m),
+    M(rbox(0.79, 1.01, 0.03, 0.01, 1), dark, [0, 0.58, 0]),
+    M(scatter(cyl(0.05, 0.05, 0.04, 20), [[-0.3, -0.14], [0.3, -0.14], [-0.3, 0.14], [0.3, 0.14]].map(([x, z]) => ({ p: [x, 0.05, z], r: [0, 0, PI / 2] }))), dark),
+    M(scatter(rbox(0.09, 0.07, 0.09, 0.02, 2), [[-0.3, -0.14], [0.3, -0.14], [-0.3, 0.14], [0.3, 0.14]].map(([x, z]) => ({ p: [x, 0.1, z] }))), dark),
+    rod([-0.14, 1.06, -0.12], [-0.14, 1.36, -0.12], 0.014, metal), rod([0.14, 1.06, -0.12], [0.14, 1.36, -0.12], 0.014, metal),
+    M(rbox(0.36, 0.05, 0.06, 0.025, 2), dark, [0, 1.38, -0.12]),
+    M(tor(0.08, 0.018, 8, 20, PI), dark, [0, 1.08, 0.08]),
+    M(rbox(0.12, 0.16, 0.012, 0.02, 2), mat.satin('#ffd43b'), [0.3, 0.98, 0.24], [0, 0, 0.25]),
+  ]);
+}, { yaw: -0.45 });
+
+/* ---------------- beauty ---------------- */
+reg('sunscreen', ({ c = '#ffb703', label = 'SUN' }) => {
+  const g = pebble(0.5, 1.0, 0.3, 0.45, 0.4, 64, 64);
+  deform(g, (v) => { v.x *= 1 - 0.18 * (v.y + 0.5); });
+  planarUV(g, 0.5, 1.0);
+  const tex = frontTex((t, w, h) => {
+    t.fillStyle = '#ffffff'; t.beginPath(); t.arc(w / 2, h * 0.3, 80, 0, TAU); t.fill();
+    for (let i = 0; i < 12; i++) { t.save(); t.translate(w / 2, h * 0.3); t.rotate((i / 12) * TAU); t.fillRect(-6, -130, 12, 32); t.restore(); }
+    txt(t, label, w / 2, h * 0.58, 150, '#ffffff', { weight: 900, maxW: 380 });
+    txt(t, 'SPF50+', w / 2, h * 0.72, 64, '#ffffff', { weight: 800 });
+    txt(t, 'PA++++', w / 2, h * 0.8, 44, '#ffffff', { weight: 700 });
+  }, hex(c), 1024);
+  return G([
+    M(g, mat.gloss('#ffffff', { map: tex, roughness: 0.25 }), [0, 0.68, 0]),
+    M(cyl(0.15, 0.16, 0.18, 40), mat.gloss('#ffffff', { roughness: 0.25 }), [0, 0.09, 0]),
+    M(rbox(0.06, 0.04, 0.05, 0.015, 2), mat.gloss('#ffffff'), [0, 0.19, 0.14]),
+  ]);
+}, { yaw: -0.2 });
+
+reg('hairoil', ({ c = '#f59f00' }) => {
+  const bottle = (s) => {
+    const b = lathe([[0, 0], [0.26, 0], [0.29, 0.03], [0.3, 0.55], [0.24, 0.68], [0.1, 0.74], [0.1, 0.8], [0, 0.8]]);
+    return G([
+      M(b, mat.glass(c, { attenuationDistance: 0.9, thickness: 0.8 })),
+      wrapLabel(b, 0.18, 0.42, { title: 'HAIR OIL', sub: 'argan & rose', accent: hex(hsl(c, 0, 0, -0.15)), ink: DARK, band: false }),
+      M(cyl(0.12, 0.12, 0.08, 32), mat.metal(GOLD, 0.2), [0, 0.82, 0]),
+      M(lathe([[0, 0], [0.1, 0], [0.11, 0.06], [0.1, 0.18], [0.06, 0.26], [0, 0.28]]), mat.satin('#26252c', { roughness: 0.4 }), [0, 0.86, 0]),
+    ], null, null, s);
+  };
+  return G([G([bottle(1)], [-0.2, 0, 0]), G([bottle(0.68)], [0.38, 0, 0.25], [0, 0.4, 0])]);
+}, { yaw: -0.3 });
+
+reg('bathbomb', ({ c = '#ff8fab', c2 = '#74c0fc' }) => {
+  const ball = (r, a, b) => { const g = sph(r, 48, 32); vcolor(g, (v) => (v.y + 0.25 * Math.sin((v.x * 9) / r) * r > 0 ? a : b)); return g; };
+  const chalk = mat.matte('#ffffff', { vertexColors: true, roughness: 0.95, bumpMap: noiseTex(256, 21, 2500, 2), bumpScale: 2 });
+  const glit = [];
+  const r = rng(30);
+  for (let i = 0; i < 70; i++) { const a = r() * TAU, e = r() * 1.2; glit.push({ p: [-0.3 + Math.cos(a) * Math.sin(e) * 0.32, 0.32 + Math.cos(e) * 0.32, Math.sin(a) * Math.sin(e) * 0.32] }); }
+  return G([
+    M(ball(0.32, c, c2), chalk, [-0.3, 0.32, 0]),
+    M(ball(0.26, c2, '#ffffff'), chalk, [0.32, 0.26, -0.2], [0.4, 1, 0]),
+    M(ball(0.22, hsl(c, 0.1, 0, 0.05), c), chalk, [0.22, 0.22, 0.36], [0, 2, 0.3]),
+    M(scatter(sph(0.012, 6, 4), glit), mat.metal('#f1d488', 0.2)),
+    M(ext(rpoly(starPts(5, 0.07, 0.03), 0.01), 0.01, { bevel: 0.008, seg: 2 }), mat.satin('#c77dff'), [-0.3, 0.645, 0.02], [-PI / 2, 0, 0]),
+  ]);
+}, { elev: 0.45 });
+
+/* ---------------- health ---------------- */
+reg('energydrink', ({ c = '#e8590c' }) => {
+  const b = lathe([[0, 0], [0.17, 0], [0.19, 0.03], [0.19, 0.52], [0.15, 0.62], [0.09, 0.68], [0.09, 0.76], [0, 0.76]]);
+  const one = (p, ry) => G([
+    M(b, mat.glass('#8a4510', { attenuationDistance: 0.06, thickness: 0.5 })),
+    wrapLabel(b, 0.14, 0.46, { title: 'ドーパD', sub: 'タウリン3000mg', accent: hex(c), ink: DARK, h: 200, turn: 0.45 - ry }),
+    M(cyl(0.095, 0.095, 0.08, 32), mat.metal(GOLD, 0.25), [0, 0.79, 0]),
+  ], p, [0, ry, 0]);
+  const boxTex = ctex(512, 256, (g, w, h) => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.fillStyle = hex(c); g.fillRect(0, h * 0.62, w, h * 0.38); txt(g, 'ドーパD', w / 2, h * 0.32, 80, hex(c), { weight: 900 }); txt(g, '10本入り', w / 2, h * 0.8, 40, '#ffffff', { weight: 800 }); });
+  return G([
+    G([M(rbox(1.0, 0.5, 0.3, 0.02, 2), mat.satin('#ffffff')), M(new THREE.PlaneGeometry(0.98, 0.48), mat.satin('#ffffff', { map: boxTex }), [0, 0, 0.151])], [0, 0.25, -0.35]),
+    one([-0.3, 0, 0.05], 0.1), one([0.05, 0, 0.12], -0.2), one([0.38, 0, 0.02], 0.3),
+  ]);
+}, { yaw: -0.25 });
+
+reg('sleepmask', ({ c = '#d0bfff' }) => {
+  const top = [], bot = [];
+  for (let i = 0; i <= 24; i++) {
+    const x = -0.6 + (i / 24) * 1.2, ax = Math.abs(x) / 0.6;
+    top.push(new THREE.Vector2(x, 0.27 - 0.03 * Math.cos(x * 5.2) - ax ** 4 * 0.1));
+    bot.push(new THREE.Vector2(x, -0.25 + 0.15 * Math.exp((-x * x) / 0.012) + ax ** 4 * 0.12));
+  }
+  const s = new THREE.Shape(); s.moveTo(top[0].x, top[0].y); s.splineThru(top.slice(1)); s.splineThru(bot.reverse());
+  const g = ext(s, 0.05, { bevel: 0.06, seg: 5, curve: 40 });
+  deform(g, (v) => { v.z -= 0.35 * v.x * v.x; });
+  const dark = mat.satin('#3b3355', { roughness: 0.5 });
+  const eye = (sx) => {
+    const pts = []; for (let i = 0; i <= 10; i++) { const t = i / 10, x = sx + (t - 0.5) * 0.3; pts.push([x, 0.04 - 0.07 * Math.sin(t * PI), 0.12 - 0.35 * x * x]); }
+    const lashes = [0.2, 0.4, 0.6, 0.8].map((t) => { const x = sx + (t - 0.5) * 0.3; return { p: [x, 0.0 - 0.07 * Math.sin(t * PI) - 0.03, 0.12 - 0.35 * x * x], r: [0, 0, (t - 0.5) * 1.2] }; });
+    return [M(tube(pts, 0.012, 24, 6), dark), M(scatter(cap(0.008, 0.035, 3, 6), lashes), dark), M(sph(0.05, 16, 12), mat.soft('#ff9fb2'), [sx + (sx > 0 ? 0.05 : -0.05), -0.1, 0.12 - 0.35 * sx * sx], null, [1.3, 0.8, 0.3])];
+  };
+  const strap = []; for (let i = 0; i <= 16; i++) { const a = (i / 16) * PI; strap.push([Math.cos(a) * 0.62, 0.02, -0.12 - Math.sin(a) * 0.45]); }
+  return G([M(g, mat.soft(c)), eye(-0.24), eye(0.24), M(tube(strap, 0.025, 40, 8), mat.soft(hsl(c, 0, 0, -0.08)))], [0, 0.45, 0], [-0.15, 0, 0]);
+}, { yaw: -0.3, elev: 0.2 });
+
+reg('hotwater', ({ c = '#ff8fab', c2 = '#ffffff' }) => {
+  const s = rpoly([[-0.45, -0.6], [0.45, -0.6], [0.45, 0.45], [0.25, 0.6], [0.12, 0.62], [0.12, 0.78], [-0.12, 0.78], [-0.12, 0.62], [-0.25, 0.6], [-0.45, 0.45]], [0.15, 0.15, 0.12, 0.06, 0.02, 0.02, 0.02, 0.02, 0.06, 0.12]);
+  const g = ext(s, 0.2, { bevel: 0.12, seg: 6 });
+  deform(g, (v) => { if (Math.abs(v.z) > 0.08 && v.y < 0.58) { const k = 1 + 0.06 * Math.cos(v.x * 42); v.z *= k; } });
+  return G([
+    M(g, mat.soft(c, { roughness: 0.95 })),
+    M(cyl(0.12, 0.13, 0.12, 32), mat.gloss('#f1f3f5'), [0, 0.86, 0]),
+    M(cyl(0.08, 0.1, 0.1, 24), mat.gloss('#26252c'), [0, 0.95, 0]),
+    M(scatter(sph(0.07, 20, 14), [{ p: [-0.17, 0.66, 0.15] }, { p: [0.17, 0.66, 0.15] }]), mat.soft(c2, { roughness: 1 })),
+    M(ext(heartShape(0.22), 0.01, { bevel: 0.01, seg: 2 }), mat.soft(c2), [0, -0.05, 0.225]),
+  ], [0, 0.62, 0], [-0.2, 0, 0]);
+}, { yaw: -0.3 });
+
+/* ---------------- home ---------------- */
+reg('bed', ({ c = '#ffb3c1', c2 = '#ffd43b' }) => {
+  const wood = mat.satin(WOOD, { roughness: 0.45 }), sheet = mat.soft('#fbfbfd');
+  return G([
+    M(rbox(1.7, 0.22, 2.1, 0.05, 3), wood, [0, 0.24, 0]),
+    M(scatter(cyl(0.05, 0.04, 0.14, 12), [[-0.75, -0.95], [0.75, -0.95], [-0.75, 0.95], [0.75, 0.95]].map(([x, z]) => ({ p: [x, 0.07, z] }))), wood),
+    M(rbox(1.7, 0.85, 0.14, 0.07, 4), mat.soft(c), [0, 0.62, -1.05]),
+    M(rbox(1.6, 0.24, 2.0, 0.1, 5), sheet, [0, 0.47, 0]),
+    M(scatter(pebble(0.62, 0.17, 0.4, 0.35, 0.6), [{ p: [-0.38, 0.66, -0.72] }, { p: [0.38, 0.66, -0.72] }]), sheet),
+    M(rbox(1.66, 0.14, 1.35, 0.07, 5), mat.soft(c), [0, 0.64, 0.3]),
+    M(rbox(1.66, 0.06, 0.26, 0.03, 3), mat.soft(mix(c, '#ffffff', 0.5)), [0, 0.72, -0.33]),
+    M(pebble(0.35, 0.3, 0.12, 0.3), mat.soft(c2), [0.3, 0.72, -0.5], [-0.3, -0.3, 0.2]),
+  ]);
+}, { yaw: -0.65, elev: 0.42 });
+
+reg('desk', ({ c = '#f1f3f5' }) => {
+  const m = mat.gloss(c, { roughness: 0.25 }), top = mat.satin('#e8cfa6', { roughness: 0.4 });
+  const screen = ctex(256, 160, (g, w, h) => { const grd = g.createLinearGradient(0, 0, w, h); grd.addColorStop(0, '#a18cd1'); grd.addColorStop(1, '#fbc2eb'); g.fillStyle = grd; g.fillRect(0, 0, w, h); });
+  return G([
+    M(rbox(1.6, 0.06, 0.75, 0.025, 2), top, [0, 0.78, 0]),
+    M(scatter(cyl(0.028, 0.028, 0.75, 16), [[-0.74, -0.32], [0.74, -0.32], [-0.74, 0.32], [0.74, 0.32]].map(([x, z]) => ({ p: [x, 0.375, z] }))), m),
+    M(rbox(0.45, 0.2, 0.66, 0.03, 3), m, [0.5, 0.65, 0]),
+    M(rbox(0.12, 0.02, 0.02, 0.01, 1), mat.metal(SILVER), [0.5, 0.65, 0.335]),
+    G([
+      M(rbox(0.62, 0.025, 0.42, 0.015, 2), mat.metal(SILVER, 0.25)),
+      G([M(rbox(0.62, 0.4, 0.02, 0.015, 2), mat.metal(SILVER, 0.25), [0, 0.2, 0]), M(new THREE.PlaneGeometry(0.56, 0.34), mat.gloss('#000000', { map: screen, emissive: '#ffffff', emissiveMap: screen, emissiveIntensity: 0.8 }), [0, 0.2, 0.011])], [0, 0.01, -0.2], [-0.25, 0, 0]),
+    ], [-0.2, 0.825, 0.05]),
+    G([M(cyl(0.07, 0.06, 0.12, 24), mat.gloss('#ff8fab')), M(pebble(0.14, 0.12, 0.14, 0.7), mat.satin('#4caf50'), [0, 0.1, 0])], [0.55, 0.87, -0.15]),
+  ]);
+}, { yaw: -0.5, elev: 0.35 });
+
+reg('bookshelf', ({ c = '#f1f3f5' }) => {
+  const m = mat.satin(c, { roughness: 0.4 }), W = 1.2, H = 1.6, D = 0.38, t = 0.04;
+  const parts = [
+    M(scatter(rbox(t, H, D, 0.01, 1), [{ p: [-W / 2 + t / 2, H / 2, 0] }, { p: [W / 2 - t / 2, H / 2, 0] }]), m),
+    M(scatter(rbox(W, t, D, 0.01, 1), [t / 2, 0.55, 1.07, H - t / 2].map((y) => ({ p: [0, y, 0] }))), m),
+    M(rbox(W, H, 0.02, 0.005, 1), mat.satin(hsl(c, 0, 0, -0.05)), [0, H / 2, -D / 2]),
+  ];
+  const r = rng(77), palette = ['#ff6b6b', '#4dabf7', '#ffd43b', '#51cf66', '#cc5de8', '#ff922b', '#20c997', '#f06595', '#5c7cfa', '#adb5bd'];
+  for (const y0 of [0.04, 0.57, 1.09]) {
+    let x = -W / 2 + t + 0.02;
+    while (x < W / 2 - t - 0.1) {
+      const w = 0.05 + r() * 0.05, h = 0.28 + r() * 0.15;
+      parts.push(M(rbox(w, h, 0.28, 0.008, 1), mat.satin(palette[Math.floor(r() * palette.length)], { roughness: 0.5 }), [x + w / 2, y0 + h / 2, 0.02]));
+      x += w + 0.005;
+      if (r() < 0.08) x += 0.12;
+    }
+  }
+  parts.push(G([M(cyl(0.09, 0.07, 0.14, 24), mat.gloss('#ff8fab')), M(pebble(0.2, 0.18, 0.2, 0.7), mat.satin('#4caf50'), [0, 0.14, 0])], [0.35, H + 0.07, 0]));
+  return G(parts);
+}, { yaw: -0.35 });
+
+function rose(col) {
+  // nested petal cups, lighter outside and deeper toward the heart, so the head reads as a rose
+  const petal = (s, rot, shade) => { const g = lathe([[0, 0], [0.05, 0.005], [0.1, 0.05], [0.12, 0.12], [0.11, 0.16]]); deform(g, (v) => { if (v.y > 0.1) v.y += 0.025 * Math.cos(Math.atan2(v.z, v.x) * 3); }); return M(g, mat.satin(hsl(col, 0, 0, shade), { roughness: 0.45, side: THREE.DoubleSide }), null, [0, rot, 0], s); };
+  return G([petal(1, 0, 0.06), petal(0.8, 1, 0), petal(0.6, 2, -0.06), petal(0.42, 3, -0.12), M(sph(0.03, 16, 12), mat.satin(hsl(col, 0, 0, -0.18)), [0, 0.06, 0])]);
+}
+reg('bouquet', ({ c = '#ff4d6d', c2 = '#ffd8e4' }) => {
+  const cone = (r0, r1, h) => { const g = lathe([[r0, 0], [r0 * 1.6, h * 0.3], [r1, h]], { segs: 72 }); deform(g, (v) => { if (v.y > h * 0.85) v.y += 0.05 * Math.cos(Math.atan2(v.z, v.x) * 6); }); return g; };
+  const r = rng(15), heads = [];
+  for (let i = 0; i < 7; i++) { const a = i * 2.4, d = i ? 0.14 + r() * 0.2 : 0; heads.push(G([rose(i % 3 === 2 ? mix(c, '#ffffff', 0.4) : hsl(c, (r() - 0.5) * 0.04, 0, 0))], [Math.cos(a) * d, 0.92 + r() * 0.12 - d * 0.3, Math.sin(a) * d], [(Math.sin(a) * d) * 0.8, r(), -(Math.cos(a) * d) * 0.8], 1.75)); }
+  const bb = scatter(sph(0.02, 8, 6), Array.from({ length: 50 }, () => { const a = r() * TAU, d = 0.15 + r() * 0.25; return { p: [Math.cos(a) * d, 0.9 + r() * 0.15, Math.sin(a) * d] }; }));
+  return G([
+    M(cone(0.05, 0.48, 0.95), mat.satin('#d9b88a', { roughness: 0.7, side: THREE.DoubleSide }), [0, 0, 0], [0, 0.3, 0]),
+    M(cone(0.06, 0.44, 0.9), mat.satin(c2, { roughness: 0.6, side: THREE.DoubleSide }), [0, 0.02, 0]),
+    M(tor(0.12, 0.025, 10, 40), mat.satin(c), [0, 0.22, 0], [PI / 2, 0, 0]),
+    M(scatter(pebble(0.12, 0.08, 0.04, 0.5), [{ p: [-0.07, 0.22, 0.12], r: [0, 0, 0.4] }, { p: [0.07, 0.22, 0.12], r: [0, 0, -0.4] }]), mat.satin(c)),
+    heads, M(bb, mat.satin('#ffffff')),
+  ], [0, 0.1, 0], [-0.25, 0, 0.18]);
+}, { yaw: -0.2, elev: 0.3 });
+
+reg('teaset', ({ c = '#74c0fc' }) => {
+  const por = mat.gloss('#fdfcf8', { roughness: 0.15 }), acc = mat.gloss(c, { roughness: 0.15 });
+  const cup = (p) => G([
+    M(lathe([[0, 0], [0.25, 0], [0.28, 0.02], [0.3, 0.04], [0.26, 0.035], [0, 0.02]]), acc),
+    M(lathe([[0, 0.03], [0.1, 0.03], [0.12, 0.05], [0.18, 0.22], [0.19, 0.24]]), por),
+    M(lathe([[0.19, 0.24], [0.175, 0.23], [0.115, 0.07], [0, 0.07]]), por),
+    M(new THREE.CircleGeometry(0.165, 32), mat.gloss('#c96a1b', { roughness: 0.05 }), [0, 0.2, 0], [-PI / 2, 0, 0]),
+    M(tor(0.19, 0.0065, 6, 48), mat.metal(GOLD, 0.2), [0, 0.24, 0], [PI / 2, 0, 0]),
+    M(tor(0.055, 0.015, 8, 24, PI * 1.2), por, [0.2, 0.14, 0], [0, 0, -PI * 0.6]),
+  ], p);
+  return G([
+    M(lathe([[0, 0], [0.3, 0], [0.38, 0.08], [0.42, 0.25], [0.38, 0.45], [0.25, 0.55], [0, 0.56]]), acc, [-0.3, 0, -0.1]),
+    M(lathe([[0, 0.54], [0.24, 0.54], [0.2, 0.62], [0, 0.64]]), por, [-0.3, 0, -0.1]),
+    M(sph(0.05, 16, 12), acc, [-0.3, 0.67, -0.1]),
+    M(tube([[0.05, 0.15, -0.1], [0.22, 0.28, -0.1], [0.3, 0.48, -0.1]], 0.045, 24, 12), acc),
+    M(tor(0.15, 0.03, 10, 32, PI * 1.2), acc, [-0.72, 0.3, -0.1], [0, 0, PI * 0.4]),
+    cup([0.4, 0, 0.3]), cup([0.55, 0, -0.32]),
+  ]);
+}, { yaw: -0.4, elev: 0.38 });
+
+reg('diffuser', ({ c = '#b197fc', label = 'LAVENDER' }) => {
+  const bottle = lathe([[0, 0], [0.3, 0], [0.33, 0.03], [0.34, 0.3], [0.28, 0.42], [0.1, 0.48], [0.09, 0.56], [0, 0.56]]);
+  const sticks = Array.from({ length: 7 }, (_, i) => { const a = (i / 7) * TAU, t = 0.15 + (i % 3) * 0.08; return { p: [Math.cos(a) * Math.sin(t) * 0.55, 0.45 + Math.cos(t) * 0.55, Math.sin(a) * Math.sin(t) * 0.55], r: [Math.sin(a) * t, 0, -Math.cos(a) * t] }; });
+  return G([
+    M(bottle, mat.glass(c, { attenuationDistance: 0.35, thickness: 0.9 })),
+    wrapLabel(bottle, 0.1, 0.24, { title: label, sub: 'reed diffuser', accent: hex(hsl(c, 0, 0, -0.2)), ink: DARK, band: false }),
+    M(cyl(0.1, 0.1, 0.08, 32), mat.metal(GOLD, 0.2), [0, 0.58, 0]),
+    M(scatter(cyl(0.012, 0.012, 1.15, 6), sticks), mat.satin('#c9a77a', { roughness: 0.7 })),
+  ]);
+}, { yaw: -0.3 });
+
+reg('xmastree', ({ c = '#e03131' }) => {
+  const tier = (R, h) => { const g = lathe([[0, -0.02], [R, 0], [R * 0.18, h * 0.9], [0, h]], { smooth: false, segs: 96 }); deform(g, (v) => { const r = Math.hypot(v.x, v.z); if (v.y < 0.05) v.y -= 0.05 * Math.max(0, Math.cos(Math.atan2(v.z, v.x) * 10)) * (r / R) ** 3; }); return g; };
+  const tiers = [[0.7, 0.4, 0.6], [0.56, 0.72, 0.55], [0.42, 1.02, 0.5], [0.28, 1.3, 0.42]];
+  const green = mat.satin('#2b8a3e', { roughness: 0.6 }), r = rng(19);
+  const cols = [c, GOLD, '#4dabf7', '#ffffff', hsl(c, 0.1, 0, 0.1)];
+  const orn = cols.map(() => []);
+  const parts = tiers.map(([R, y, h], i) => {
+    const g = tier(R, h);
+    surfacePts(g, 7 - i, r, (p) => p.y < h * 0.6 && p.y > 0.02).forEach((o, k) => orn[(k + i) % cols.length].push({ p: [o.p[0] * 1.05, o.p[1] + y, o.p[2] * 1.05] }));
+    return M(g, green, [0, y, 0]);
+  });
+  const garland = []; for (let i = 0; i <= 60; i++) { const t = i / 60, a = t * TAU * 3, y = 1.55 - t * 1.1, rr = 0.7 * (1.72 - y) / 1.32 + 0.02; garland.push([Math.cos(a) * rr, y, Math.sin(a) * rr]); }
+  return G([
+    M(lathe([[0, 0], [0.26, 0], [0.3, 0.26], [0, 0.26]], { smooth: false }), mat.gloss(c, { roughness: 0.2 })),
+    M(cyl(0.08, 0.1, 0.18, 16), mat.satin('#7a4b2a'), [0, 0.33, 0]),
+    parts,
+    orn.map((list, i) => M(scatter(sph(0.05, 16, 12), list), i === 1 ? mat.metal(GOLD, 0.15) : mat.gloss(cols[i], { roughness: 0.1, clearcoat: 1 }))),
+    M(tube(garland, 0.014, 200, 6), mat.metal(GOLD, 0.2)),
+    M(ext(rpoly(starPts(5, 0.14, 0.06), 0.015), 0.04, { bevel: 0.02, seg: 2 }), mat.glow('#ffd43b', 0.8), [0, 1.82, 0]),
+  ]);
+}, { yaw: -0.2 });
+
+/* ---------------- tech ---------------- */
+reg('tv', ({ c = '#2b2a33' }) => {
+  const scr = ctex(512, 288, (g, w, h) => {
+    const sky = g.createLinearGradient(0, 0, 0, h); sky.addColorStop(0, '#5f4b8b'); sky.addColorStop(0.55, '#ff8a65'); sky.addColorStop(1, '#ffd29d');
+    g.fillStyle = sky; g.fillRect(0, 0, w, h);
+    g.fillStyle = '#fff3c4'; g.beginPath(); g.arc(w * 0.62, h * 0.6, 40, 0, TAU); g.fill();
+    g.fillStyle = '#3d2c5a'; g.beginPath(); g.moveTo(0, h * 0.7); g.lineTo(w * 0.25, h * 0.45); g.lineTo(w * 0.45, h * 0.68); g.lineTo(w * 0.7, h * 0.5); g.lineTo(w, h * 0.72); g.lineTo(w, h); g.lineTo(0, h); g.fill();
+    g.fillStyle = '#2a1f40'; g.fillRect(0, h * 0.82, w, h * 0.18);
+  });
+  const m = mat.gloss(c, { roughness: 0.3 });
+  return G([
+    M(rbox(1.9, 1.1, 0.07, 0.03, 3), mat.gloss('#16161c', { roughness: 0.2 }), [0, 0.78, 0]),
+    M(new THREE.PlaneGeometry(1.84, 1.04), mat.gloss('#000000', { map: scr, emissive: '#ffffff', emissiveMap: scr, emissiveIntensity: 0.85, roughness: 0.1 }), [0, 0.78, 0.036]),
+    M(rbox(1.2, 0.7, 0.12, 0.05, 3), m, [0, 0.78, -0.08]),
+    M(rbox(0.14, 0.24, 0.06, 0.02, 2), m, [0, 0.12, -0.02]),
+    M(rbox(0.7, 0.03, 0.32, 0.015, 2), m, [0, 0.015, 0]),
+  ]);
+}, { yaw: -0.35, elev: 0.18 });
+
+reg('fridge', ({ c = '#96f2d7' }) => {
+  const m = mat.gloss(c, { roughness: 0.16, clearcoat: 1 }), chrome = mat.metal(SILVER, 0.12);
+  return G([
+    M(pebble(0.8, 1.7, 0.72, 0.16, 0.12), m, [0, 0.93, 0]),
+    M(rbox(0.74, 0.012, 0.02, 0.005, 1), mat.matte('#2b2a33'), [0, 1.26, 0.352]),
+    M(rbox(0.04, 0.2, 0.05, 0.02, 2), chrome, [0.3, 1.42, 0.37]), M(rbox(0.04, 0.34, 0.05, 0.02, 2), chrome, [0.3, 1.0, 0.37]),
+    M(rbox(0.16, 0.05, 0.015, 0.01, 1), chrome, [0, 1.62, 0.36]),
+    M(scatter(cyl(0.035, 0.035, 0.08, 12), [[-0.3, -0.25], [0.3, -0.25], [-0.3, 0.25], [0.3, 0.25]].map(([x, z]) => ({ p: [x, 0.04, z] }))), chrome),
+    M(scatter(cyl(0.04, 0.04, 0.02, 20), [{ p: [-0.18, 1.0, 0.36], r: [PI / 2, 0, 0] }]), mat.gloss('#ff6b6b')),
+    M(scatter(cyl(0.035, 0.035, 0.02, 20), [{ p: [-0.08, 0.86, 0.36], r: [PI / 2, 0, 0] }]), mat.gloss('#ffd43b')),
+  ]);
+}, { yaw: -0.45 });
+
+reg('washer', ({ c = '#f1f3f5' }) => {
+  const m = mat.gloss(c, { roughness: 0.22 });
+  const r = rng(8), cols = ['#ff6b6b', '#4dabf7', '#ffd43b', '#51cf66', '#cc5de8'];
+  const laundry = cols.map((col, i) => M(pebble(0.14, 0.11, 0.08, 0.7), mat.soft(col), [Math.cos(i * 1.3) * 0.12, 0.42 + Math.sin(i * 1.3) * 0.12, 0.44], [r(), r(), r()]));
+  const disp = ctex(128, 64, (g, w, h) => { g.fillStyle = '#0d1512'; g.fillRect(0, 0, w, h); txt(g, '0:42', w / 2, h / 2, 34, '#7dffd2', { weight: 600 }); });
+  return G([
+    M(rbox(0.95, 1.05, 0.82, 0.08, 4), m, [0, 0.525, 0]),
+    M(rbox(0.9, 0.16, 0.02, 0.01, 1), mat.gloss('#2b2a33', { roughness: 0.2 }), [0, 0.93, 0.411]),
+    M(new THREE.PlaneGeometry(0.16, 0.08), mat.gloss('#000000', { map: disp, emissive: '#ffffff', emissiveMap: disp, emissiveIntensity: 0.9 }), [0.15, 0.93, 0.422]),
+    M(cyl(0.05, 0.05, 0.03, 24), mat.metal(SILVER, 0.2), [-0.25, 0.93, 0.425], [PI / 2, 0, 0]),
+    M(cyl(0.27, 0.27, 0.04, 48), mat.gloss('#3a3d45', { roughness: 0.3 }), [0, 0.42, 0.405], [PI / 2, 0, 0]),
+    laundry,
+    M(tor(0.3, 0.05, 16, 64), mat.metal(SILVER, 0.15), [0, 0.42, 0.42]),
+    M(sph(0.28, 48, 24, 0, TAU, 0, PI / 2), mat.glass('#cfe8ff', { thickness: 0.1, roughness: 0.03 }), [0, 0.42, 0.42], [PI / 2, 0, 0], [1, 0.32, 1]),
+  ]);
+}, { yaw: -0.4 });
+
+reg('microphone', ({ c = '#2b2a33', c2 = '#5ee7ff' }) => {
+  const mesh = ctex(128, 128, (g, w, h) => { g.fillStyle = '#9aa1ab'; g.fillRect(0, 0, w, h); g.fillStyle = '#2b2d33'; for (let y = 4; y < h; y += 10) for (let x = (y / 10) % 2 ? 5 : 0; x < w; x += 10) { g.beginPath(); g.arc(x, y, 3, 0, TAU); g.fill(); } }, { repeat: [6, 4] });
+  const m = mat.gloss(c, { roughness: 0.25 });
+  return G([
+    M(lathe([[0, 0], [0.32, 0], [0.34, 0.03], [0.3, 0.07], [0, 0.08]]), m),
+    M(cyl(0.025, 0.025, 0.55, 16), mat.metal('#55575f', 0.3), [0, 0.35, 0]),
+    M(tor(0.12, 0.018, 8, 32, PI), mat.metal('#55575f', 0.3), [0, 0.7, 0], [0, PI / 2, PI]),
+    M(cyl(0.16, 0.16, 0.42, 48), m, [0, 0.82, 0]),
+    M(cap(0.165, 0.28, 12, 48), mat.metal('#ffffff', 0.35, { map: mesh, metalness: 0.8 }), [0, 1.18, 0]),
+    M(tor(0.165, 0.012, 8, 48), mat.glow(c2, 2), [0, 1.04, 0], [PI / 2, 0, 0]),
+    M(tor(0.26, 0.012, 8, 48), mat.metal('#55575f', 0.3), [0, 0.92, 0], [PI / 2, 0, 0]),
+    G([M(new THREE.CircleGeometry(0.2, 40), new THREE.MeshPhysicalMaterial({ color: '#111111', transparent: true, opacity: 0.55, roughness: 0.9, side: THREE.DoubleSide })), M(tor(0.2, 0.012, 8, 48), mat.metal('#55575f', 0.3))], [0, 1.18, 0.45]),
+    M(tube([[0.3, 0.06, 0.1], [0.32, 0.7, 0.2], [0.1, 1.05, 0.45], [0.0, 1.0, 0.45]], 0.01, 40, 6), mat.metal('#55575f', 0.3)),
+  ]);
+}, { yaw: -0.5 });
+
+reg('ringlight', ({ c = '#f1f3f5' }) => {
+  const legs = [0, 1, 2].map((i) => { const a = (i / 3) * TAU; return rod([0, 0.45, 0], [Math.cos(a) * 0.45, 0, Math.sin(a) * 0.45], 0.014, mat.metal('#3b3a40', 0.3)); });
+  return G([
+    legs,
+    rod([0, 0.4, 0], [0, 1.1, 0], 0.022, mat.metal('#3b3a40', 0.3)),
+    M(tor(0.5, 0.065, 16, 96), mat.gloss(c, { roughness: 0.25 }), [0, 1.62, -0.02]),
+    M(tor(0.5, 0.045, 12, 96), mat.glow('#fff9ec', 2.2), [0, 1.62, 0.025]),
+    M(rbox(0.1, 0.06, 0.06, 0.02, 2), mat.gloss('#3b3a40'), [0, 1.1, 0]),
+    rod([0, 1.1, 0], [0, 1.6, 0], 0.012, mat.metal('#3b3a40', 0.3)),
+    M(rbox(0.16, 0.3, 0.02, 0.03, 3), mat.gloss('#ff8fab', { roughness: 0.15 }), [0, 1.62, 0.03]),
+  ]);
+}, { elev: 0.15, yaw: -0.3 });
+
+reg('coffeemaker', ({ c = '#2b2a33' }) => {
+  const m = mat.gloss(c, { roughness: 0.22 });
+  return G([
+    M(rbox(0.7, 0.1, 0.62, 0.04, 3), m, [0, 0.05, 0]),
+    M(rbox(0.7, 1.0, 0.26, 0.05, 3), m, [0, 0.55, -0.18]),
+    M(rbox(0.7, 0.22, 0.62, 0.05, 3), m, [0, 0.98, 0]),
+    M(cyl(0.2, 0.2, 0.01, 40), mat.matte('#1b1b1f'), [0, 0.105, 0.08]),
+    G([
+      M(lathe([[0, 0.01], [0.2, 0.01], [0.235, 0.06], [0.24, 0.2], [0, 0.2]]), mat.gloss('#3b1f12', { roughness: 0.05 })),
+      M(lathe([[0, 0], [0.2, 0], [0.24, 0.05], [0.25, 0.25], [0.2, 0.38], [0.17, 0.42]]), mat.glass('#ffffff', { thickness: 0.05, roughness: 0.02, side: THREE.DoubleSide })),
+      M(lathe([[0.17, 0.4], [0.2, 0.42], [0.19, 0.46], [0, 0.48]]), mat.gloss('#16161c')),
+      M(tor(0.12, 0.025, 10, 32, PI), mat.gloss('#16161c'), [0.25, 0.22, 0], [0, 0, -PI / 2]),
+    ], [0, 0.11, 0.08]),
+    M(cyl(0.006, 0.006, 0.3, 6), mat.gloss('#3b1f12'), [0, 0.72, 0.08]),
+    M(scatter(cyl(0.03, 0.03, 0.02, 16), [{ p: [-0.2, 0.98, 0.31], r: [PI / 2, 0, 0] }, { p: [-0.1, 0.98, 0.31], r: [PI / 2, 0, 0] }]), mat.gloss('#ffffff')),
+    M(sph(0.015, 8, 6), mat.glow('#ff6b6b', 2), [0.2, 0.98, 0.315]),
+  ]);
+}, { yaw: -0.45 });
+
+reg('drone', ({ c = '#f1f3f5' }) => {
+  const m = mat.gloss(c, { roughness: 0.2 }), dark = mat.gloss('#2b2a33', { roughness: 0.3 });
+  const blade = new THREE.MeshPhysicalMaterial({ color: '#c9ccd4', transparent: true, opacity: 0.8, roughness: 0.3 });
+  const parts = [M(pebble(0.5, 0.16, 0.6, 0.4, 0.6), m, [0, 0.35, 0])];
+  [PI / 4, (3 * PI) / 4, (5 * PI) / 4, (7 * PI) / 4].forEach((a, i) => {
+    const d = [Math.cos(a), 0, Math.sin(a)];
+    parts.push(M(rbox(0.62, 0.04, 0.06, 0.02, 2), m, [d[0] * 0.33, 0.36, d[2] * 0.33], [0, -a, 0]));
+    parts.push(M(cyl(0.05, 0.05, 0.07, 20), dark, [d[0] * 0.62, 0.38, d[2] * 0.62]));
+    parts.push(M(scatter(rbox(0.42, 0.008, 0.05, 0.004, 1), [{ p: [0, 0, 0], r: [0, i, 0] }]), blade, [d[0] * 0.62, 0.43, d[2] * 0.62]));
+    parts.push(M(sph(0.022, 10, 8), mat.glow(i < 2 ? '#51cf66' : '#ff6b6b', 2), [d[0] * 0.62, 0.34, d[2] * 0.62]));
+  });
+  parts.push(G([M(sph(0.07, 24, 16), dark), M(cyl(0.035, 0.035, 0.03, 20), mat.gloss('#16213a', { roughness: 0.05, iridescence: 0.8 }), [0, 0, 0.065], [PI / 2, 0, 0])], [0, 0.24, 0.24]));
+  parts.push(rod([-0.15, 0.3, -0.15], [-0.2, 0.02, -0.18], 0.012, dark), rod([0.15, 0.3, -0.15], [0.2, 0.02, -0.18], 0.012, dark), rod([-0.15, 0.3, 0.15], [-0.2, 0.02, 0.18], 0.012, dark), rod([0.15, 0.3, 0.15], [0.2, 0.02, 0.18], 0.012, dark));
+  return G(parts);
+}, { elev: 0.45, yaw: -0.3 });
+
+/* ---------------- daily ---------------- */
+reg('trashcan', ({ c = '#f1f3f5', metal = false }) => {
+  const m = metal ? mat.metal(c, 0.22) : mat.gloss(c, { roughness: 0.2 });
+  return G([
+    M(lathe([[0, 0], [0.32, 0], [0.35, 0.03], [0.38, 0.9], [0, 0.9]]), m),
+    M(lathe([[0, 0.9], [0.39, 0.9], [0.4, 0.93], [0.36, 1.0], [0.2, 1.04], [0, 1.05]]), m),
+    M(tor(0.34, 0.02, 8, 64), mat.gloss('#2b2a33'), [0, 0.02, 0], [PI / 2, 0, 0]),
+    M(rbox(0.22, 0.04, 0.16, 0.015, 2), mat.gloss('#2b2a33'), [0, 0.04, 0.38]),
+    M(rbox(0.2, 0.05, 0.05, 0.02, 2), mat.gloss('#2b2a33'), [0, 0.92, -0.39]),
+  ]);
+}, { yaw: -0.3 });
+
+reg('gloves', ({ c = '#ffd43b' }) => {
+  const m = mat.gloss(c, { roughness: 0.18, clearcoat: 0.8 });
+  const glove = () => {
+    const cuff = cyl(0.21, 0.27, 0.42, 40, 1, true); cuff.scale(1, 1, 0.42);
+    deform(cuff, (v) => { if (v.y < -0.18) v.y += 0.03 * Math.sin(Math.atan2(v.z, v.x) * 8); });
+    return G([
+      M(pebble(0.52, 0.6, 0.13, 0.5, 0.6), m),
+      [[-0.18, 0.26], [-0.06, 0.32], [0.06, 0.3], [0.18, 0.24]].map(([x, l]) => M(cap(0.058, l, 8, 20), m, [x, 0.28 + l / 2, 0])),
+      M(cap(0.062, 0.22, 8, 20), m, [0.3, 0.02, 0], [0, 0, -0.8]),
+      M(cuff, mat.gloss(c, { roughness: 0.18, side: THREE.DoubleSide }), [0, -0.48, 0]),
+    ]);
+  };
+  return G([G([glove()], [-0.15, 0.08, 0.05], [-PI / 2, 0, 0.35]), G([glove()], [0.25, 0.2, -0.05], [-PI / 2 + 0.15, 0, -0.3])]);
+}, { yaw: -0.2, elev: 0.6 });
+
+reg('giftbox', ({ c = '#ff4d6d', c2 = '#ffd43b' }) => {
+  const box = (w, h, d, col, rib, p, ry) => G([
+    M(rbox(w, h, d, 0.03, 2), mat.gloss(col, { roughness: 0.3 }), [0, h / 2, 0]),
+    M(rbox(w + 0.04, 0.14, d + 0.04, 0.03, 2), mat.gloss(col, { roughness: 0.3 }), [0, h - 0.04, 0]),
+    M(rbox(0.1, h + 0.06, d + 0.06, 0.01, 1), mat.satin(rib, { roughness: 0.3 }), [0, h / 2 + 0.01, 0]),
+    M(rbox(w + 0.06, h + 0.06, 0.1, 0.01, 1), mat.satin(rib, { roughness: 0.3 }), [0, h / 2 + 0.01, 0]),
+    M(scatter(tor(0.12, 0.035, 12, 32), [{ p: [-0.11, h + 0.1, 0], r: [0, 0.2, 0.5], s: [1, 0.6, 1] }, { p: [0.11, h + 0.1, 0], r: [0, -0.2, -0.5], s: [1, 0.6, 1] }]), mat.satin(rib, { roughness: 0.3 })),
+    M(sph(0.05, 16, 12), mat.satin(rib), [0, h + 0.06, 0]),
+  ], p, [0, ry, 0]);
+  return G([box(0.85, 0.62, 0.85, c, c2, [-0.15, 0, 0], 0.2), box(0.5, 0.36, 0.5, c2, c, [0.55, 0, 0.35], -0.3)]);
+}, { yaw: -0.35, elev: 0.38 });
+
+/* ---------------- hobby & outdoor ---------------- */
+reg('tent', ({ c = '#ff922b' }) => {
+  const g = sph(1, 64, 32, 0, TAU, 0, PI / 2);
+  deform(g, (v) => { const f = (a, k) => Math.sign(a) * Math.abs(a) ** k; v.set(f(v.x, 0.75) * 1.0, v.y * 0.78, f(v.z, 0.75) * 0.85); });
+  const tri = g.toNonIndexed(), pos = tri.attributes.position, cols = new Float32Array(pos.count * 3);
+  const A = new THREE.Color(c), B = new THREE.Color(hsl(c, 0, 0, -0.12)), Dd = new THREE.Color('#2b2a33');
+  for (let i = 0; i < pos.count; i += 3) {
+    const x = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3, y = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3, z = (pos.getZ(i) + pos.getZ(i + 1) + pos.getZ(i + 2)) / 3;
+    const door = z > 0.3 && Math.abs(x) < 0.32 && y < 0.55 * (1 - (x / 0.34) ** 2);
+    const col = door ? Dd : y < 0.16 ? B : A;
+    for (let k = 0; k < 3; k++) cols.set([col.r, col.g, col.b], (i + k) * 3);
+  }
+  tri.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  const sp = (a, k) => Math.sign(a) * Math.abs(a) ** k;
+  const arc = (s) => { const pts = []; for (let i = 0; i <= 24; i++) { const a = (i / 24) * PI, h = sp(Math.cos(a) * 0.7071, 0.75) * 1.015; pts.push([h * s, Math.sin(a) * 0.79, h * 0.85]); } return M(tube(pts, 0.012, 48, 6), mat.metal('#3b3a40', 0.3)); };
+  return G([
+    M(tri, mat.satin('#ffffff', { vertexColors: true, roughness: 0.5, side: THREE.DoubleSide })),
+    arc(1), arc(-1),
+    M(cap(0.04, 0.5, 6, 12), mat.satin(hsl(c, 0, 0, -0.15)), [0, 0.56, 0.62], [0, 0, PI / 2]),
+    M(scatter(cyl(0.012, 0.004, 0.12, 6), [[-1.1, 0.7], [1.1, 0.7], [-1.1, -0.7], [1.1, -0.7]].map(([x, z]) => ({ p: [x, 0.05, z] }))), mat.metal(SILVER)),
+    rod([-0.7, 0.45, 0.45], [-1.1, 0.05, 0.7], 0.004, mat.matte('#ffffff')), rod([0.7, 0.45, 0.45], [1.1, 0.05, 0.7], 0.004, mat.matte('#ffffff')),
+  ]);
+}, { yaw: -0.4, elev: 0.3 });
+
+reg('sleepingbag', ({ c = '#4dabf7', c2 = '#ffd43b' }) => {
+  const bag = pebble(0.85, 0.3, 2.0, 0.45, 0.6, 64, 64);
+  deform(bag, (v) => { v.x *= 1 - 0.32 * smooth(-0.3, 1, v.z); if (v.y > 0) v.y *= 1 + 0.08 * Math.cos(v.z * 26); });
+  return G([
+    M(bag, mat.satin(c, { roughness: 0.4, clearcoat: 0.3 }), [0, 0.15, 0]),
+    M(pebble(0.5, 0.06, 0.36, 0.6), mat.matte('#2b2a33'), [0, 0.29, -0.66]),
+    M(tor(1, 0.05, 10, 48), mat.satin(hsl(c, 0, 0, -0.1)), [0, 0.29, -0.66], [PI / 2, 0, 0], [0.27, 0.2, 1]),
+    M(tube([[0.38, 0.2, -0.55], [0.4, 0.2, 0.1], [0.3, 0.2, 0.85]], 0.012, 40, 6), mat.metal('#9aa1ab', 0.3)),
+    M(pebble(0.45, 0.14, 0.3, 0.4, 0.6), mat.soft(c2), [0, 0.36, -0.95], [0.2, 0, 0]),
+  ]);
+}, { yaw: -0.6, elev: 0.5 });
+
+reg('bbq', ({ c = '#2b2a33' }) => {
+  const m = mat.gloss(c, { roughness: 0.2, clearcoat: 1 }), steel = mat.metal(SILVER, 0.25);
+  const bars = []; for (let z = -0.48; z <= 0.48; z += 0.12) { const l = 2 * Math.sqrt(0.57 * 0.57 - z * z); bars.push({ p: [0, 0.97, z], r: [0, 0, PI / 2], s: [1, l / 1, 1] }); }
+  const r = rng(26), coals = [];
+  for (let i = 0; i < 30; i++) { const a = r() * TAU, d = r() * 0.45; coals.push({ p: [Math.cos(a) * d, 0.82 + r() * 0.06, Math.sin(a) * d], r: [r(), r(), r()] }); }
+  const skewer = (z, ry) => { const cols = ['#8b4513', '#2f9e44', '#f1e3c8', '#e03131', '#8b4513', '#2f9e44']; return G([rod([-0.38, 0, 0], [0.42, 0, 0], 0.008, mat.satin(WOOD)), cols.map((col, i) => M(rbox(0.09, 0.09, 0.09, 0.025, 2), mat.satin(col, { roughness: 0.6 }), [-0.25 + i * 0.1, 0, 0], [0.2 * i, 0, 0]))], [0, 1.03, z], [0, ry, 0]); };
+  return G([
+    M(sph(0.6, 64, 32, 0, TAU, PI / 2, PI / 2), m, [0, 0.95, 0]),
+    M(tor(0.6, 0.02, 8, 64), steel, [0, 0.95, 0], [PI / 2, 0, 0]),
+    M(scatter(pebble(0.12, 0.08, 0.1, 0.6), coals.slice(0, 18)), mat.satin('#2a2420', { roughness: 0.9 })),
+    M(scatter(pebble(0.12, 0.08, 0.1, 0.6), coals.slice(18)), mat.glow('#ff6b00', 1.6)),
+    M(tor(0.57, 0.012, 6, 64), steel, [0, 0.97, 0], [PI / 2, 0, 0]),
+    M(scatter(cyl(0.008, 0.008, 1, 6), bars), steel),
+    skewer(-0.18, 0.1), skewer(0.05, -0.08),
+    M(scatter(cap(0.045, 0.22, 6, 14), [{ p: [0.05, 1.02, 0.3], r: [0, 0.3, PI / 2] }, { p: [-0.1, 1.02, 0.36], r: [0, 0.1, PI / 2] }]), mat.gloss('#c2552d', { roughness: 0.4 })),
+    [0, 1, 2].map((i) => { const a = (i / 3) * TAU + PI / 2; return rod([Math.cos(a) * 0.3, 0.5, Math.sin(a) * 0.3], [Math.cos(a) * 0.55, 0, Math.sin(a) * 0.55], 0.022, steel); }),
+    M(rbox(0.2, 0.05, 0.06, 0.02, 2), mat.gloss('#16161c'), [0.66, 0.92, 0]),
+  ]);
+}, { yaw: -0.3, elev: 0.55 });
+
+reg('campchair', ({ c = '#2f9e44' }) => {
+  const frame = mat.metal('#3b3a40', 0.35), fab = mat.soft(c, { side: THREE.DoubleSide, roughness: 0.75 });
+  const seat = new THREE.PlaneGeometry(0.78, 0.6, 20, 16); seat.rotateX(-PI / 2);
+  deform(seat, (v) => { v.y -= 0.09 * (1 - (v.x / 0.39) ** 2) * (1 - (v.z / 0.3) ** 2); });
+  const back = new THREE.PlaneGeometry(0.78, 0.62, 20, 16);
+  deform(back, (v) => { v.z -= 0.07 * (1 - (v.x / 0.39) ** 2) * (1 - (v.y / 0.31) ** 2); });
+  return G([
+    rod([-0.4, 0, 0.32], [-0.4, 0.52, 0.32], 0.02, frame), rod([0.4, 0, 0.32], [0.4, 0.52, 0.32], 0.02, frame),
+    rod([-0.4, 0, -0.32], [-0.42, 1.12, -0.48], 0.02, frame), rod([0.4, 0, -0.32], [0.42, 1.12, -0.48], 0.02, frame),
+    rod([-0.4, 0.05, 0.32], [0.4, 0.5, 0.32], 0.014, frame), rod([0.4, 0.05, 0.32], [-0.4, 0.5, 0.32], 0.014, frame),
+    rod([-0.4, 0.05, -0.32], [0.4, 0.5, -0.32], 0.014, frame), rod([0.4, 0.05, -0.32], [-0.4, 0.5, -0.32], 0.014, frame),
+    M(seat, fab, [0, 0.52, 0]),
+    M(back, fab, [0, 0.86, -0.42], [-0.2, 0, 0]),
+    M(scatter(rbox(0.1, 0.04, 0.66, 0.02, 2), [{ p: [-0.44, 0.7, 0] }, { p: [0.44, 0.7, 0] }]), fab),
+    M(cyl(0.06, 0.05, 0.1, 20, 1, true), mat.soft(hsl(c, 0, 0, -0.1), { side: THREE.DoubleSide }), [0.52, 0.66, 0.2]),
+  ]);
+}, { yaw: -0.55, elev: 0.32 });
+
+reg('swimring', ({ c = '#ff4d6d', c2 = '#ffffff' }) => {
+  const g = tor(0.5, 0.21, 32, 120).toNonIndexed(), pos = g.attributes.position, cols = new Float32Array(pos.count * 3);
+  const A = new THREE.Color(c), B = new THREE.Color(c2);
+  for (let i = 0; i < pos.count; i += 3) {
+    const x = (pos.getX(i) + pos.getX(i + 1) + pos.getX(i + 2)) / 3, y = (pos.getY(i) + pos.getY(i + 1) + pos.getY(i + 2)) / 3;
+    const col = Math.floor(((Math.atan2(y, x) + PI) / TAU) * 8) % 2 ? A : B;
+    for (let k = 0; k < 3; k++) cols.set([col.r, col.g, col.b], (i + k) * 3);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(cols, 3));
+  return G([M(g, mat.gloss('#ffffff', { vertexColors: true, roughness: 0.15, clearcoat: 1 })), M(cyl(0.03, 0.03, 0.06, 12), mat.gloss('#ffffff'), [0, 0.7, 0.05], [0.3, 0, 0])], [0, 0.72, 0], [-0.55, 0, 0]);
+}, { elev: 0.3, yaw: -0.2 });
+
+reg('kettlebell', ({ c = '#ff5d73' }) => {
+  const kb = (s, col, label) => {
+    const body = sph(0.4, 48, 32); deform(body, (v) => { if (v.y < -0.28) v.y = -0.28; });
+    const plate = ctex(128, 128, (g, w, h) => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); txt(g, label, w / 2, h * 0.46, 56, '#26252c', { weight: 900 }); txt(g, 'kg', w / 2, h * 0.78, 26, '#26252c', { weight: 800 }); });
+    return G([
+      M(body, mat.gloss(col, { roughness: 0.35 })),
+      M(tor(0.24, 0.055, 16, 48, PI), mat.gloss(col, { roughness: 0.35 }), [0, 0.3, 0]),
+      M(scatter(cyl(0.055, 0.06, 0.14, 20), [{ p: [-0.24, 0.26, 0] }, { p: [0.24, 0.26, 0] }]), mat.gloss(col, { roughness: 0.35 })),
+      M(new THREE.CircleGeometry(0.11, 32), mat.satin('#ffffff', { map: plate }), [0, 0.0, 0.402]),
+    ], [0, 0.28 * s, 0], null, s);
+  };
+  return G([G([kb(1, c, '8')], [-0.3, 0, 0]), G([kb(0.72, hsl(c, 0.45, 0, 0), '4')], [0.45, 0, 0.3], [0, -0.4, 0])]);
+}, { yaw: -0.3 });
+
+reg('balloons', ({ c = '#ff4d6d', c2 = GOLD }) => {
+  const shape = lathe([[0, -0.02], [0.035, -0.015], [0.03, 0.02], [0.1, 0.08], [0.27, 0.3], [0.32, 0.52], [0.27, 0.73], [0.15, 0.84], [0, 0.86]]);
+  const cols = [c, hsl(c, 0.15, 0, 0.05), hsl(c, -0.12, 0, 0.08), mix(c, '#ffffff', 0.55), hsl(c, 0.5, 0, 0.05)];
+  const spots = [[-0.32, 1.45, 0.0, 0.3], [0.12, 1.72, -0.12, -0.1], [0.42, 1.42, 0.1, -0.35], [-0.05, 1.25, 0.28, 0.1], [0.3, 1.95, 0.05, -0.2]];
+  const knot = [0, 0.18, 0.15];
+  const parts = spots.map(([x, y, z, tz], i) => {
+    const strand = M(tube([[x, y, z], [(x + knot[0]) / 2 + 0.05, (y + knot[1]) / 2, (z + knot[2]) / 2], knot], 0.004, 24, 4), mat.matte('#ffffff'));
+    return [M(shape, mat.gloss(cols[i], { roughness: 0.1, clearcoat: 1 }), [x, y, z], [0, 0, tz]), strand];
+  });
+  const heart = ext(heartShape(0.55), 0.06, { bevel: 0.06, seg: 5 });
+  return G([
+    parts,
+    M(heart, mat.metal(c2, 0.15), [-0.45, 1.95, -0.1], [0, 0.3, 0.2]),
+    M(tube([[-0.45, 1.68, -0.1], [-0.2, 0.9, 0.05], knot], 0.004, 24, 4), mat.matte('#ffffff')),
+    M(rbox(0.2, 0.2, 0.2, 0.03, 2), mat.gloss(c2, { roughness: 0.25 }), [0, 0.1, 0.15]),
+  ]);
+}, { elev: 0.12, yaw: -0.2 });
+
+reg('picnicbasket', ({ c = '#ff6b6b' }) => {
+  const weave = ctex(256, 256, (g, w, h) => { g.fillStyle = '#c9955b'; g.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 16) for (let x = 0; x < w; x += 16) { g.fillStyle = ((x + y) / 16) % 2 ? '#a8743d' : '#ddb27a'; g.fillRect(x + 1, y + 1, 14, 14); } }, { repeat: [4, 2] });
+  const gingham = ctex(256, 256, (g, w, h) => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); g.fillStyle = hex(mix(c, '#ffffff', 0.45)); for (let i = 0; i < 8; i++) { g.fillRect(i * 32, 0, 16, h); g.fillRect(0, i * 32, w, 16); } g.fillStyle = hex(c); for (let i = 0; i < 8; i++) for (let j = 0; j < 8; j++) g.fillRect(i * 32, j * 32, 16, 16); }, { repeat: [3, 2] });
+  const wicker = mat.satin('#ffffff', { map: weave, roughness: 0.8 });
+  return G([
+    M(rbox(1.1, 0.5, 0.72, 0.06, 3), wicker, [0, 0.25, 0]),
+    M(rbox(1.12, 0.06, 0.37, 0.03, 2), wicker, [0, 0.53, -0.18]),
+    G([M(rbox(1.12, 0.06, 0.37, 0.03, 2), wicker, [0, 0, 0.185])], [0, 0.53, 0], [-1.25, 0, 0]),
+    M(pebble(0.7, 0.14, 0.5, 0.5, 0.6), mat.soft('#ffffff', { map: gingham }), [-0.1, 0.52, 0.12], [0.1, 0.2, -0.05]),
+    M(cap(0.075, 0.7, 8, 20), mat.satin('#d9a35b', { roughness: 0.6, bumpMap: noiseTex(256, 5, 900, 3), bumpScale: 1 }), [0.3, 0.72, 0.05], [0.2, 0.3, -0.9]),
+    M(sph(0.13, 32, 24), mat.gloss('#e03131', { roughness: 0.2 }), [-0.3, 0.64, 0.18]),
+    M(tor(0.42, 0.025, 10, 48, PI), wicker, [0, 0.53, -0.02]),
+  ]);
+}, { yaw: -0.4, elev: 0.38 });
+
+/* ---------------- pets ---------------- */
+reg('catwand', ({ c = '#ff6b9a', c2 = '#b8bcc8' }) => {
+  const feather = ext((() => { const s = new THREE.Shape(); s.moveTo(0, 0); s.quadraticCurveTo(0.08, 0.15, 0, 0.42); s.quadraticCurveTo(-0.08, 0.15, 0, 0); return s; })(), 0.004, { bevel: 0.01, seg: 2 });
+  const fcols = [c, hsl(c, 0.12, 0, 0.05), hsl(c, -0.1, 0, 0.08), '#ffd43b', '#4dabf7'];
+  const end = [0.45, 0.03, 0.3];
+  const mouse = G([
+    M(sph(0.12, 32, 20), mat.soft(c2), [0, 0.09, 0], null, [1.5, 0.85, 1]),
+    M(scatter(sph(0.05, 16, 12), [{ p: [0.1, 0.17, 0.06], s: [0.4, 1, 1] }, { p: [0.1, 0.17, -0.06], s: [0.4, 1, 1] }]), mat.soft('#ffb3c1')),
+    M(sph(0.018, 10, 8), mat.soft('#ff6b9a'), [0.2, 0.09, 0]),
+    M(scatter(sph(0.012, 8, 6), [{ p: [0.15, 0.12, 0.045] }, { p: [0.15, 0.12, -0.045] }]), mat.gloss('#1b1b1f')),
+    M(tube([[-0.17, 0.06, 0], [-0.3, 0.05, 0.08], [-0.4, 0.03, -0.02]], 0.01, 24, 6), mat.soft('#ff8fab')),
+  ], [-0.3, 0, 0.35], [0, 0.6, 0]);
+  return G([
+    rod([-0.75, 0.025, -0.35], [0.2, 0.06, -0.1], 0.022, mat.satin(WOOD, { roughness: 0.5 })),
+    M(tube([[0.2, 0.06, -0.1], [0.35, 0.02, 0.05], end], 0.004, 24, 4), mat.matte('#ffffff')),
+    M(sph(0.045, 16, 12), mat.metal(GOLD, 0.2), end),
+    fcols.map((col, i) => M(feather, mat.satin(col, { roughness: 0.8, side: THREE.DoubleSide }), [end[0], 0.025 + i * 0.006, end[2]], [-PI / 2, 0, -0.9 + i * 0.35])),
+    mouse,
+  ]);
+}, { yaw: -0.2, elev: 0.6 });
+
+reg('petcarrier', ({ c = '#74c0fc' }) => {
+  const m = mat.gloss(c, { roughness: 0.2 }), metal = mat.metal(SILVER, 0.25);
+  const bars = Array.from({ length: 7 }, (_, i) => ({ p: [-0.21 + i * 0.07, 0.42, 0.515] }));
+  const catC = '#f4a259';
+  return G([
+    M(rbox(0.82, 0.36, 1.02, 0.1, 4), mat.gloss('#f8f9fa', { roughness: 0.25 }), [0, 0.2, 0]),
+    M(rbox(0.8, 0.34, 1.0, 0.15, 5), m, [0, 0.55, 0]),
+    G([
+      M(sph(0.17, 32, 24), mat.soft(catC)),
+      M(scatter(new THREE.ConeGeometry(0.06, 0.1, 16), [{ p: [-0.09, 0.14, 0], r: [0, 0, 0.25] }, { p: [0.09, 0.14, 0], r: [0, 0, -0.25] }]), mat.soft(catC)),
+      M(scatter(sph(0.025, 12, 10), [{ p: [-0.06, 0.03, 0.15] }, { p: [0.06, 0.03, 0.15] }]), mat.gloss('#1b1b1f', { roughness: 0.1 })),
+      M(sph(0.02, 10, 8), mat.soft('#ff8fab'), [0, -0.02, 0.165]),
+    ], [0, 0.42, 0.3]),
+    M(scatter(cyl(0.011, 0.011, 0.38, 8), bars), metal),
+    M(scatter(rbox(0.5, 0.025, 0.025, 0.01, 1), [{ p: [0, 0.23, 0.515] }, { p: [0, 0.61, 0.515] }]), metal),
+    M(tor(0.15, 0.03, 10, 32, PI), mat.gloss('#2b2a33'), [0, 0.72, 0]),
+    M(scatter(rbox(0.012, 0.06, 0.18, 0.005, 1), [-0.2, 0, 0.2].flatMap((z) => [{ p: [0.401, 0.52, z] }, { p: [-0.401, 0.52, z] }])), mat.matte('#1b1b1f')),
+  ]);
+}, { yaw: -0.5 });
+
+/* ---------------- baby ---------------- */
+reg('stroller', ({ c = '#ffb3c1' }) => {
+  const frame = mat.metal(SILVER, 0.25), tire = mat.satin('#2b2a33', { roughness: 0.6 });
+  const wheel = (r, p) => G([M(tor(r, 0.03, 12, 40), tire), M(cyl(r * 0.75, r * 0.75, 0.02, 24), mat.satin('#dee2e6'), [0, 0, 0], [PI / 2, 0, 0]), M(cyl(0.03, 0.03, 0.06, 12), frame, [0, 0, 0], [PI / 2, 0, 0])], p, [0, PI / 2, 0]);
+  const canopy = sph(0.44, 48, 24, 0, PI, 0, PI / 2); canopy.rotateY(PI);
+  return G([
+    wheel(0.22, [-0.33, 0.22, -0.35]), wheel(0.22, [0.33, 0.22, -0.35]), wheel(0.14, [-0.28, 0.14, 0.45]), wheel(0.14, [0.28, 0.14, 0.45]),
+    [-1, 1].map((s) => [rod([s * 0.32, 0.22, -0.35], [s * 0.3, 1.15, -0.62], 0.02, frame), rod([s * 0.28, 0.14, 0.45], [s * 0.3, 0.6, -0.05], 0.02, frame)]),
+    rod([-0.32, 1.15, -0.62], [0.32, 1.15, -0.62], 0.035, mat.satin('#2b2a33', { roughness: 0.6 })),
+    M(pebble(0.62, 0.36, 0.8, 0.4, 0.6), mat.soft(c), [0, 0.7, -0.05]),
+    M(pebble(0.5, 0.08, 0.5, 0.5, 0.6), mat.soft(mix(c, '#ffffff', 0.6)), [0, 0.86, 0.05]),
+    M(canopy, mat.soft(hsl(c, 0, 0, -0.08), { side: THREE.DoubleSide }), [0, 0.84, -0.18], null, [0.75, 0.85, 1]),
+    M(rbox(0.5, 0.12, 0.45, 0.03, 2), mat.satin('#3b3a40', { roughness: 0.8 }), [0, 0.32, -0.05]),
+  ]);
+}, { yaw: -0.65, elev: 0.3 });
+
+reg('babyshoes', ({ c = '#ffa8c5', c2 = '#ffffff' }) => {
+  const shoe = () => G([
+    M(pebble(0.42, 0.08, 0.78, 0.35, 0.5), mat.satin('#ffffff', { roughness: 0.6 }), [0, 0.04, 0]),
+    M(pebble(0.4, 0.34, 0.72, 0.45, 0.7), mat.soft(c), [0, 0.2, 0]),
+    M(pebble(0.36, 0.2, 0.3, 0.5, 0.7), mat.soft('#ffffff'), [0, 0.13, 0.24]),
+    M(pebble(0.22, 0.05, 0.24, 0.6), mat.matte('#4a3f55'), [0, 0.36, -0.14]),
+    M(tor(1, 0.035, 10, 40), mat.soft(mix(c, '#ffffff', 0.4)), [0, 0.36, -0.14], [PI / 2, 0, 0], [0.12, 0.13, 1]),
+    M(rbox(0.44, 0.04, 0.12, 0.02, 2), mat.soft(c2), [0, 0.34, 0.1], [-0.35, 0, 0]),
+    M(ext(rpoly(starPts(5, 0.06, 0.025), 0.008), 0.008, { bevel: 0.006, seg: 2 }), mat.satin('#ffd43b'), [0.205, 0.2, 0], [0, PI / 2, 0]),
+  ]);
+  return G([G([shoe()], [-0.25, 0, 0], [0, 0.25, 0]), G([shoe()], [0.27, 0, -0.12], [0, -0.15, 0])]);
+}, { yaw: -0.5, elev: 0.4 });
+
+/* ---------------- stationery ---------------- */
+reg('notebook', ({ c = '#4dabf7' }) => {
+  const nb = (col, i, spiral) => {
+    const lbl = ctex(256, 128, (g, w, h) => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, w, h); txt(g, 'NOTEBOOK', w / 2, h * 0.32, 30, '#26252c', { weight: 800 }); g.strokeStyle = '#c9ccd4'; g.lineWidth = 3; [0.6, 0.78].forEach((y) => { g.beginPath(); g.moveTo(24, h * y); g.lineTo(w - 24, h * y); g.stroke(); }); });
+    return G([
+      M(rbox(0.85, 0.035, 1.15, 0.012, 2), mat.satin(col, { roughness: 0.45 })),
+      M(rbox(0.82, 0.03, 1.12, 0.006, 1), mat.matte('#fbfbf8'), [0.01, 0, 0]),
+      M(new THREE.PlaneGeometry(0.42, 0.21), mat.satin('#ffffff', { map: lbl }), [0.04, 0.0185, -0.25], [-PI / 2, 0, 0]),
+      spiral ? M(scatter(tor(0.03, 0.006, 6, 16), Array.from({ length: 16 }, (_, k) => ({ p: [-0.43, 0.0, -0.52 + k * 0.07], r: [0, 0, 0] }))), mat.metal(SILVER, 0.2)) : null,
+    ], [0, 0.0175 + i * 0.04, 0], [0, (i % 2 ? 1 : -1) * 0.06 * i, 0]);
+  };
+  return G([[0, 1, 2, 3, 4].map((i) => nb(hsl(c, i * 0.13, 0, 0), i, i === 4)), G([pencil('#ffd43b')], [0.2, 0.25, 0.2], [0, 0.7, PI / 2], 0.6)]);
+}, { elev: 0.55, yaw: -0.3 });
+
+reg('fountainpen', ({ c = '#1c2541' }) => {
+  const m = mat.gloss(c, { roughness: 0.12, clearcoat: 1 }), gold = mat.metal(GOLD, 0.15);
+  const nib = ext(rpoly([[-0.05, 0], [0.05, 0], [0.035, 0.1], [0, 0.17], [-0.035, 0.1]], [0.01, 0.01, 0.02, 0.005, 0.02]), 0.006, { bevel: 0.004, seg: 1 });
+  const pen = G([
+    M(lathe([[0, 0], [0.04, 0.005], [0.06, 0.05], [0.065, 0.3], [0.06, 0.55], [0.055, 0.6], [0, 0.6]]), m),
+    M(tor(0.058, 0.008, 6, 32), gold, [0, 0.58, 0], [PI / 2, 0, 0]),
+    M(cyl(0.045, 0.035, 0.12, 24), mat.gloss('#16161c'), [0, 0.66, 0]),
+    M(nib, gold, [0, 0.71, 0.01], [-0.08, 0, 0]),
+  ]);
+  const capG = G([
+    M(lathe([[0, 0], [0.068, 0], [0.07, 0.4], [0.06, 0.48], [0.035, 0.52], [0, 0.53]]), m),
+    M(tor(0.069, 0.01, 6, 32), gold, [0, 0.03, 0], [PI / 2, 0, 0]),
+    M(rbox(0.025, 0.36, 0.02, 0.01, 2), gold, [0, 0.3, 0.075]),
+  ]);
+  return G([
+    G([pen], [-0.35, 0.065, 0.2], [0, 0.35, -PI / 2]),
+    G([capG], [-0.25, 0.07, -0.15], [0, -0.25, -PI / 2]),
+    M(rbox(0.42, 0.34, 0.42, 0.08, 4), mat.glass('#ffffff', { thickness: 0.2, roughness: 0.03 }), [0.45, 0.17, -0.15]),
+    M(rbox(0.36, 0.22, 0.36, 0.06, 3), mat.gloss(hsl(c, 0, 0.1, -0.05), { roughness: 0.05 }), [0.45, 0.13, -0.15]),
+    M(cyl(0.12, 0.12, 0.12, 32), mat.gloss('#16161c'), [0.45, 0.4, -0.15]),
+  ]);
+}, { yaw: -0.3, elev: 0.45 });
+
+reg('desklamp', ({ c = '#ffd43b' }) => {
+  const m = mat.gloss(c, { roughness: 0.2 }), j = mat.gloss('#2b2a33', { roughness: 0.3 });
+  const A = [0, 0.12, 0.05], B = [0, 0.78, -0.25], C = [0, 1.02, 0.35];
+  const shade = lathe([[0.04, 0], [0.12, -0.04], [0.21, -0.18], [0.25, -0.3]], { segs: 48 });
+  return G([
+    M(lathe([[0, 0], [0.3, 0], [0.32, 0.03], [0.28, 0.08], [0, 0.09]]), m),
+    M(sph(0.05, 16, 12), j, A), rod(A, B, 0.025, m), M(sph(0.045, 16, 12), j, B), rod(B, C, 0.022, m),
+    G([
+      M(shade, mat.gloss(c, { roughness: 0.2, side: THREE.DoubleSide })),
+      M(sph(0.08, 20, 14), mat.glow('#fff4d6', 2.5), [0, -0.12, 0]),
+      M(cyl(0.05, 0.05, 0.08, 16), j, [0, 0.03, 0]),
+    ], C, [-0.75, 0, 0]),
+  ]);
+}, { yaw: -0.6, elev: 0.2 });
 
 /* ================= APP OBJECTS ================= */
 reg('box', () => {

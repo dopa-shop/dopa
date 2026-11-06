@@ -248,7 +248,7 @@ function renderExplore() {
       <div class="chips hs" id="exCats">${[{ id: 'all', short: 'すべて' }, ...CATS].map((c) => `<button class="chip" data-excat="${c.id}">${c.short}</button>`).join('')}</div>
     </header>
     <div class="wrap">
-      <div class="kw" id="kw"><span>人気のキーワード</span>${['スニーカー', 'コスメ', 'スイーツ', 'ガジェット', '猫', '出産祝い', 'キッチン', 'ピンク'].map((k) => `<button class="kw-b" data-kw="${k}">${k}</button>`).join('')}</div>
+      <div class="kw" id="kw"><span>人気のキーワード</span>${['スニーカー', 'コスメ', 'スイーツ', 'キャンプ', 'パーティー', '猫', '出産祝い', 'キッチン', 'ピンク'].map((k) => `<button class="kw-b" data-kw="${k}">${k}</button>`).join('')}</div>
       <div class="sortbar"><span id="exCount"></span><div class="seg" role="group" aria-label="並び替え">${[['rec', 'おすすめ'], ['low', '安い順'], ['high', '高い順'], ['rate', '評価順']].map(([k, l]) => `<button data-sort="${k}">${l}</button>`).join('')}</div></div>
       <div class="grid" id="exGrid"></div>
     </div>`;
