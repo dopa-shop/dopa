@@ -151,7 +151,7 @@ function seeded(list, seed) {
 }
 
 /* ================= HOME ================= */
-const HERO = ['sneaker', 'headphones', 'perfume', 'camera', 'sofa'];
+const HERO = ['sneaker', 'headphones', 'ring', 'perfume', 'handheld', 'camera'];
 let heroI = 0, heroTimer = 0, heroVisible = true;
 function heroInfo(p) {
   return `<span class="tag">${ic('flash', 14)}タイムセール <b data-countdown>${countdown()}</b></span>
@@ -245,7 +245,7 @@ function renderExplore() {
       <div class="chips hs" id="exCats">${[{ id: 'all', short: 'すべて' }, ...CATS].map((c) => `<button class="chip" data-excat="${c.id}">${c.short}</button>`).join('')}</div>
     </header>
     <div class="wrap">
-      <div class="kw" id="kw"><span>人気のキーワード</span>${['スニーカー', 'コスメ', 'スイーツ', 'ガジェット', 'ピンク', 'インテリア', 'ミント'].map((k) => `<button class="kw-b" data-kw="${k}">${k}</button>`).join('')}</div>
+      <div class="kw" id="kw"><span>人気のキーワード</span>${['スニーカー', 'コスメ', 'スイーツ', 'ガジェット', '猫', '出産祝い', 'キッチン', 'ピンク'].map((k) => `<button class="kw-b" data-kw="${k}">${k}</button>`).join('')}</div>
       <div class="sortbar"><span id="exCount"></span><div class="seg" role="group" aria-label="並び替え">${[['rec', 'おすすめ'], ['low', '安い順'], ['high', '高い順'], ['rate', '評価順']].map(([k, l]) => `<button data-sort="${k}">${l}</button>`).join('')}</div></div>
       <div class="grid" id="exGrid"></div>
     </div>`;
@@ -262,6 +262,8 @@ function exResults() {
   else if (ex.sort === 'high') list.sort((a, b) => b.price - a.price);
   else if (ex.sort === 'rate') list.sort((a, b) => b.rating - a.rating || b.reviews - a.reviews);
   $$('[data-excat]').forEach((b) => b.classList.toggle('on', b.dataset.excat === ex.cat));
+  const onChip = $('[data-excat].on'), row = $('#exCats');
+  if (onChip && row) row.scrollTo({ left: Math.max(0, onChip.offsetLeft - row.clientWidth / 2 + onChip.offsetWidth / 2), behavior: reduced() ? 'auto' : 'smooth' });
   $$('[data-sort]').forEach((b) => b.classList.toggle('on', b.dataset.sort === ex.sort));
   $('#exCount').textContent = `${list.length}件`;
   $('#kw').hidden = !!ex.q;

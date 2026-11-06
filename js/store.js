@@ -1,5 +1,5 @@
 // dopa — app state, persisted per device in localStorage.
-import { byId, PRODUCTS } from './catalog.js';
+import { byId, PRODUCTS, CATS } from './catalog.js';
 
 const KEY = 'dopa.state.v1';
 export const FREE_SHIP = 3500;
@@ -47,7 +47,7 @@ export const BADGES = [
   { id: 'col10', name: 'コレクター', desc: 'コレクションを10種集める', icon: 'star', test: (s) => s.collection.length >= 10 },
   { id: 'orders10', name: '常連さん', desc: '10回注文する', icon: 'repeat', test: (s) => s.orders.length >= 10 },
   { id: 'gold', name: 'ゴールド会員', desc: 'ゴールドランクに到達', icon: 'medal', test: (s) => s.xp >= RANKS[2].xp },
-  { id: 'catall', name: '全カテゴリ制覇', desc: '全8カテゴリの商品を買う', icon: 'crown', test: (s) => catsBought(s) >= 8 },
+  { id: 'catall', name: '全カテゴリ制覇', desc: `全${CATS.length}カテゴリの商品を買う`, icon: 'crown', test: (s) => catsBought(s) >= CATS.length },
   { id: 'jackpot', name: '大当たり', desc: 'ガチャでURを引く', icon: 'trophy', test: (s) => !!s.gotUR },
   { id: 'col30', name: 'マスターコレクター', desc: 'コレクションを30種集める', icon: 'gem', test: (s) => s.collection.length >= 30 },
 ];
